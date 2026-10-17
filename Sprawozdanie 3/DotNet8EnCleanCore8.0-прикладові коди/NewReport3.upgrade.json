@@ -1,0 +1,54 @@
+{
+  "settings": {
+    "components": {
+      "code": true,
+      "binaries": true
+    },
+    "targetId": "",
+    "targetDisplayName": ".NET 8.0"
+  },
+  "analysisStartTime": "2024-10-16T10:23:58.7263352Z",
+  "analysisEndTime": "2024-10-16T10:23:59.0269102Z",
+  "privacyModeHelpUrl": "https://go.microsoft.com/fwlink/?linkid=2270980",
+  "stats": {
+    "summary": {
+      "projects": 3,
+      "issues": 0,
+      "incidents": 0,
+      "effort": 0
+    },
+    "charts": {
+      "severity": {
+        "Mandatory": 0,
+        "Optional": 0,
+        "Potential": 0,
+        "Information": 0
+      },
+      "category": {}
+    }
+  },
+  "projects": [
+    {
+      "path": "SimpleDelegate\\SimpleDelegate.csproj",
+      "startingProject": true,
+      "issues": 0,
+      "storyPoints": 0,
+      "ruleInstances": []
+    },
+    {
+      "path": "SimpleEvent\\SimpleEvent.csproj",
+      "startingProject": true,
+      "issues": 0,
+      "storyPoints": 0,
+      "ruleInstances": []
+    },
+    {
+      "path": "TimerExample\\TimerExample.csproj",
+      "startingProject": true,
+      "issues": 0,
+      "storyPoints": 0,
+      "ruleInstances": []
+    }
+  ],
+  "rules": {}
+}

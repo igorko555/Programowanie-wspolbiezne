@@ -1,0 +1,615 @@
+================================================================================
+ПОЛІТЕХНІКА СВЄНТОКШИСЬКА В КЕЛЬЦАХ (POLITECHNIKA ŚWIĘTOKRZYSKA)
+ФАКУЛЬТЕТ ЕЛЕКТРОТЕХНІКИ, АВТОМАТИКИ ТА ІНФОРМАТИКИ
+КАФЕДРА ІНФОРМАЦІЙНИХ СИСТЕМ (KATEDRA SYSTEMÓW INFORMATYCZNYCH)
+
+КУРС: PROGRAMOWANIE WSPÓŁBIEŻNE (.NET / C#)
+СТУДЕНТ: Namachynskyi Ihor
+ГРУПА: 2ID12B
+НОМЕР ІНДЕКСУ: s097889
+ВИКЛАДАЧ: dr inż. Paweł Paduch
+
+ПОВНИЙ ЗБІРНИК ВИХІДНИХ КОДІВ ТА ПОЯСНЕНЬ ДЛЯ УСНОГО ЗАХИСТУ РОБОТИ
+ТЕМА: SPRAWOZDANIE NR 3 — DELEGATY, EVENTY I TIMERY
+================================================================================
+Примітка: Усі файли C# у проєкті навмисно не містять жодних коментарів згідно
+з вимогами до чистоти коду. Усі пояснення, розбір роботи середовища CLR та
+готові відповіді на запитання викладача наведені у цьому документі.
+================================================================================
+
+
+################################################################################
+ЧАСТИНА 1. ПРОЄКТ SimpleDelegate — ЗАВДАННЯ 1: PROSTY DELEGAT
+ФАЙЛ: Solutions/SimpleDelegate/Punkt1.cs
+################################################################################
+
+--------------------------------------------------------------------------------
+1.1. ПОВНИЙ ВИХІДНИЙ КОД ФАЙЛУ Punkt1.cs
+--------------------------------------------------------------------------------
+using System;
+
+namespace SimpleDelegate
+{
+    public delegate void MathOperation(int a, int b);
+
+    class Punkt1
+    {
+        static void PrintSum(int a, int b)
+        {
+            Console.WriteLine($"{a} + {b} = {a + b}");
+        }
+
+        static void PrintDifference(int a, int b)
+        {
+            Console.WriteLine($"{a} - {b} = {a - b}");
+        }
+
+        static void PrintProduct(int a, int b)
+        {
+            Console.WriteLine($"{a} * {b} = {a * b}");
+        }
+
+        static void PrintQuotient(int a, int b)
+        {
+            if (b != 0)
+            {
+                Console.WriteLine($"{a} / {b} = {(double)a / b:F2}");
+            }
+            else
+            {
+                Console.WriteLine("Dzielenie przez zero!");
+            }
+        }
+
+        static void Main(string[] args)
+        {
+            int x = 20;
+            int y = 4;
+
+            MathOperation mathOp = new MathOperation(PrintSum);
+            mathOp += PrintDifference;
+            mathOp += PrintProduct;
+            mathOp += PrintQuotient;
+
+            mathOp(x, y);
+
+            Console.WriteLine("\nNazwy metod z listy wywolan:");
+            foreach (var item in mathOp.GetInvocationList())
+            {
+                Console.WriteLine(item.Method.Name);
+            }
+        }
+    }
+}
+
+--------------------------------------------------------------------------------
+1.2. ПОЯСНЕННЯ ДЛЯ УСНОГО ЗАХИСТУ ПЕРЕД ВИКЛАДАЧЕМ (PUNKT 1)
+--------------------------------------------------------------------------------
+* ЩО РОБИТЬ КОЖЕН РЯДОК:
+  - `public delegate void MathOperation(int a, int b);`: Оголошення нового типу делегата. Делегат описує "контракт" або сигнатуру методу — повертає `void` і приймає рівно два параметри типу `int`. Будь-який метод із такою самою сигнатурою може бути переданий у цей делегат.
+  - `PrintSum`, `PrintDifference`, `PrintProduct`, `PrintQuotient`: Чотири методи, які повністю відповідають сигнатурі делегата. У методі `PrintQuotient` додано перевірку `if (b != 0)`, щоб уникнути ділення на нуль, а при діленні один із аргументів приведено до `(double)`, щоб отримати дробове значення, відформатоване з точністю до двох знаків (`:F2`).
+  - `MathOperation mathOp = new MathOperation(PrintSum);`: Створення первинного екземпляра делегата з методом `PrintSum`.
+  - `mathOp += PrintDifference;` (та наступні `+=`): Додавання методів до списку викликів делегата (створення MulticastDelegate).
+  - `mathOp(x, y);`: Виклик делегата. CLR автоматично проходить по списку викликів і по черзі виконує всі 4 методи з тими самими аргументами `x` та `y`.
+  - `foreach (var item in mathOp.GetInvocationList())`: Виклик методу `GetInvocationList()`, який повертає масив `Delegate[]`. Властивість `item.Method.Name` через механізм рефлексії .NET повертає рядок з назвою методу, що друкується в консоль.
+
+* ЩО ВІДПОВІСТИ НА ПИТАННЯ ВИКЛАДАЧА:
+  - "Чому делегат називається Multicast?": Тому що в C# всі користувацькі делегати успадковуються від класу `System.MulticastDelegate`. Це дозволяє одному екземпляру делегата зберігати посилання не на один метод, а на цілий ланцюжок методів.
+  - "Що станеться, якщо один із методів у ланцюжку викине виняток?": Якщо не використовувати `GetInvocationList()` вручну, виконання ланцюга обірветься на методі з помилкою, і наступні методи виконані не будуть.
+
+
+################################################################################
+ЧАСТИНА 2. СПІЛЬНИЙ КЛАС Alarm.cs
+ФАЙЛ: Solutions/SimpleEvent/Alarm.cs
+################################################################################
+
+--------------------------------------------------------------------------------
+2.1. ПОВНИЙ ВИХІДНИЙ КОД ФАЙЛУ Alarm.cs
+--------------------------------------------------------------------------------
+using System;
+using System.Threading;
+
+namespace SimpleEvent
+{
+    public class AlarmEventArgs : EventArgs
+    {
+        public string Message { get; set; } = string.Empty;
+        public DateTime AlarmFiredAt { get; set; }
+    }
+
+    public class ClockTickEventArgs : EventArgs
+    {
+        public TimeSpan RemainingTime { get; set; }
+        public int CheckingIntervalMs { get; set; }
+    }
+
+    public class Alarm : IDisposable
+    {
+        private TimeSpan timespanToAlarm;
+        private DateTime timeOfAlarm;
+        private Thread? internalThread;
+        private int checkingInterval = 1000;
+        private bool disposed = false;
+
+        public bool IsBackground { get; set; } = false;
+        public TimeSpan TimespanToAlarm => timespanToAlarm;
+        public int CheckingInterval => checkingInterval;
+
+        public delegate void AlarmEventHandler(object sender, AlarmEventArgs args);
+        public event AlarmEventHandler? AlarmOccured;
+        public event EventHandler<ClockTickEventArgs>? ClockTicked;
+
+        public Alarm(TimeSpan timespan, int checkingInterval = 1000)
+        {
+            this.checkingInterval = checkingInterval;
+            SetAlarm(timespan, checkingInterval);
+        }
+
+        public Alarm(DateTime at, int checkingInterval = 1000)
+        {
+            this.checkingInterval = checkingInterval;
+            SetAlarm(at, checkingInterval);
+        }
+
+        public Alarm()
+        {
+            this.checkingInterval = 1000;
+        }
+
+        public void SetAlarm(TimeSpan timeSpan, int? interval = null)
+        {
+            if (interval.HasValue) checkingInterval = interval.Value;
+            timespanToAlarm = timeSpan;
+            timeOfAlarm = DateTime.Now.Add(timeSpan);
+            init();
+        }
+
+        public void SetAlarm(DateTime at, int? interval = null)
+        {
+            if (interval.HasValue) checkingInterval = interval.Value;
+            timeOfAlarm = at;
+            timespanToAlarm = at - DateTime.Now;
+            if (timespanToAlarm.TotalMilliseconds < 0)
+                throw new ArgumentOutOfRangeException(nameof(at), "Datetime can't be from past");
+            init();
+        }
+
+        private void init()
+        {
+            startClock();
+        }
+
+        private void startClock()
+        {
+            if (internalThread == null || !internalThread.IsAlive)
+            {
+                internalThread = new Thread(checkingTime);
+                internalThread.IsBackground = IsBackground;
+                internalThread.Start(checkingInterval);
+            }
+        }
+
+        private void checkingTime(object? o)
+        {
+            int interval = (o is int i) ? i : 1000;
+
+            try
+            {
+                while (DateTime.Now < timeOfAlarm)
+                {
+                    timespanToAlarm = timeOfAlarm - DateTime.Now;
+                    if (timespanToAlarm.TotalMilliseconds < 0) timespanToAlarm = TimeSpan.Zero;
+
+                    ClockTicked?.Invoke(this, new ClockTickEventArgs
+                    {
+                        RemainingTime = timespanToAlarm,
+                        CheckingIntervalMs = interval
+                    });
+
+                    Thread.Sleep(interval);
+                }
+
+                timespanToAlarm = TimeSpan.Zero;
+                AlarmEventArgs aea = new AlarmEventArgs
+                {
+                    Message = "Alarm was triggered",
+                    AlarmFiredAt = DateTime.Now
+                };
+
+                AlarmOccured?.Invoke(this, aea);
+            }
+            catch (ThreadInterruptedException)
+            {
+                Console.WriteLine("Watek zakonczony przez Interrupt (ThreadInterruptedException).");
+            }
+        }
+
+        public void Dispose()
+        {
+            if (!disposed)
+            {
+                if (internalThread != null && internalThread.IsAlive)
+                {
+                    internalThread.Interrupt();
+                    internalThread = null;
+                }
+                disposed = true;
+                GC.SuppressFinalize(this);
+            }
+        }
+    }
+}
+
+--------------------------------------------------------------------------------
+2.2. ПОЯСНЕННЯ ДЛЯ УСНОГО ЗАХИСТУ ПЕРЕД ВИКЛАДАЧЕМ (Alarm.cs)
+--------------------------------------------------------------------------------
+* ЩО РОБИТЬ КОЖНА ЗМІННА ТА МЕТОД:
+  - `AlarmEventArgs`: клас для передачі даних події спрацьовування (`Message` — текстове повідомлення, `AlarmFiredAt` — мітка часу).
+  - `ClockTickEventArgs`: новий клас (Zadanie 5) для передачі залишкового часу `RemainingTime` та інтервалу перевірки.
+  - `timespanToAlarm`: поле, де зберігається тривалість часу до спрацьовування.
+  - `timeOfAlarm`: абсолютний момент часу в майбутньому (`DateTime`), коли сигнал повинен спрацювати.
+  - `internalThread`: екземпляр `Thread`, який працює незалежно від головного потоку програми.
+  - `checkingInterval`: інтервал сну потоку в мілісекундах (за замовчуванням 1000 мс).
+  - `IsBackground`: прапорець, що визначає, чи є потік фоновим. Використовується для демонстрації варіанта завершення v1 (Zadanie 2).
+  - `TimespanToAlarm`: властивість тільки для читання (Zadanie 5). Дозволяє ззовні дізнатися точний залишок часу без можливості його спотворити.
+  - `startClock()`: створює новий потік, призначає йому метод `checkingTime`, присвоює прапорець `IsBackground` і запускає через `Start(checkingInterval)`.
+  - `checkingTime(object? o)`: робочий цикл потоку. Поки поточний час менший за час будильника, він вираховує новий залишок, викликає подію `ClockTicked?.Invoke` і засинає через `Thread.Sleep(interval)`. Якщо час вичерпано — викликає подію `AlarmOccured`.
+  - `Dispose()`: реалізація інтерфейсу `IDisposable` (Zadanie 3). Викликає `internalThread.Interrupt()`, що генерує `ThreadInterruptedException` у сплячому потоці, і обнуляє посилання на потік.
+
+* ЩО ВІДПОВІСТИ НА ПИТАННЯ ВИКЛАДАЧА:
+  - "Чому виклик `Interrupt()` перериває `Thread.Sleep()`?": Коли потік викликає `Thread.Sleep()`, операційна система переводить його в стан очікування `WaitSleepJoin`. Метод `Interrupt()` посилає сигнал середовищу CLR, що цей стан очікування треба негайно припинити і згенерувати в цьому потоці виняток `ThreadInterruptedException`. Ми перехоплюємо цей виняток у блоці `catch` і коректно виходимо з методу, завершуючи потік без витоку ресурсів.
+  - "Чому використовується конструкція `ClockTicked?.Invoke(this, ...)`?": Оператор безпечної навігації `?.` запобігає винятку `NullReferenceException`, якщо на подію ще ніхто не підписався (тобто якщо `ClockTicked == null`).
+
+
+################################################################################
+ЧАСТИНА 3. ПРОЄКТ SimpleEvent — ЗАВДАННЯ 2: KOŃCZENIE V1 (IsBackground = true)
+ФАЙЛ: Solutions/SimpleEvent/Punkt2.cs
+################################################################################
+
+--------------------------------------------------------------------------------
+3.1. ПОВНИЙ ВИХІДНИЙ КОД ФАЙЛУ Punkt2.cs
+--------------------------------------------------------------------------------
+using System;
+
+namespace SimpleEvent
+{
+    class Punkt2
+    {
+        static void Main(string[] args)
+        {
+            Alarm alarm = new Alarm(new TimeSpan(0, 0, 10));
+            alarm.IsBackground = true;
+            alarm.AlarmOccured += Alarm_AlarmOccured;
+
+            Console.WriteLine("Uruchomiono Punkt 2 (Kończenie v1 - IsBackground = true).");
+            Console.WriteLine("Czekam na alarm lub nacisniecie dowolnego klawisza...");
+
+            if (!Console.IsInputRedirected)
+            {
+                Console.ReadKey(true);
+            }
+
+            Console.WriteLine("Koniec programu.");
+        }
+
+        private static void Alarm_AlarmOccured(object sender, AlarmEventArgs args)
+        {
+            Console.WriteLine($"{args.Message} at {args.AlarmFiredAt}");
+        }
+    }
+}
+
+--------------------------------------------------------------------------------
+3.2. ПОЯСНЕННЯ ДЛЯ УСНОГО ЗАХИСТУ ПЕРЕД ВИКЛАДАЧЕМ (PUNKT 2)
+--------------------------------------------------------------------------------
+* СУТЬ ЗАВДАННЯ:
+  У початковому коді проєкт не завершувався після натискання клавіші, оскільки потік `internalThread` був передньоплановим (`IsBackground = false`). Процес .NET чекає завершення всіх Foreground-потоків.
+  У Punkt 2 ми встановлюємо `alarm.IsBackground = true;`. Тепер потік є фоновим. Як тільки головний потік виходить з методу `Main`, середовище CLR миттєво зупиняє процес, не чекаючи завершення фонового потоку.
+
+
+################################################################################
+ЧАСТИНА 4. ПРОЄКТ SimpleEvent — ЗАВДАННЯ 3: KOŃCZENIE V2 (IDisposable + Interrupt)
+ФАЙЛ: Solutions/SimpleEvent/Punkt3.cs
+################################################################################
+
+--------------------------------------------------------------------------------
+4.1. ПОВНИЙ ВИХІДНИЙ КОД ФАЙЛУ Punkt3.cs
+--------------------------------------------------------------------------------
+using System;
+using System.Threading;
+
+namespace SimpleEvent
+{
+    class Punkt3
+    {
+        static void Main(string[] args)
+        {
+            Alarm alarm = new Alarm(new TimeSpan(0, 0, 10));
+            alarm.IsBackground = false;
+            alarm.AlarmOccured += Alarm_AlarmOccured;
+
+            Console.WriteLine("Uruchomiono Punkt 3 (Kończenie v2 - IDisposable + Interrupt).");
+            Console.WriteLine("Czekam na alarm lub nacisniecie dowolnego klawisza...");
+
+            if (!Console.IsInputRedirected)
+            {
+                Console.ReadKey(true);
+            }
+            else
+            {
+                Thread.Sleep(1500);
+            }
+
+            Console.WriteLine("Wywolanie alarm.Dispose()...");
+            alarm.Dispose();
+            Thread.Sleep(200);
+            Console.WriteLine("Koniec programu.");
+        }
+
+        private static void Alarm_AlarmOccured(object sender, AlarmEventArgs args)
+        {
+            Console.WriteLine($"{args.Message} at {args.AlarmFiredAt}");
+        }
+    }
+}
+
+--------------------------------------------------------------------------------
+4.2. ПОЯСНЕННЯ ДЛЯ УСНОГО ЗАХИСТУ ПЕРЕД ВИКЛАДАЧЕМ (PUNKT 3)
+--------------------------------------------------------------------------------
+* СУТЬ ЗАВДАННЯ:
+  Варіант v1 є занадто грубим: CLR примусово вбиває фонові потоки, через що блоки `finally` можуть не виконатися.
+  У Punkt 3 реалізовано професійний підхід: клас `Alarm` реалізує `IDisposable`. При натисканні клавіші викликається `alarm.Dispose()`. Всередині нього викликається `internalThread.Interrupt()`. Потік ловить `ThreadInterruptedException`, коректно звільняє ресурси і штатно закінчує свою роботу, після чого процес чисто завершується.
+
+
+################################################################################
+ЧАСТИНА 5. ПРОЄКТ SimpleEvent — ЗАВДАННЯ 4: PARAMETRYZACJA checkingInterval
+ФАЙЛ: Solutions/SimpleEvent/Punkt4.cs
+################################################################################
+
+--------------------------------------------------------------------------------
+5.1. ПОВНИЙ ВИХІДНИЙ КОД ФАЙЛУ Punkt4.cs
+--------------------------------------------------------------------------------
+using System;
+using System.Threading;
+
+namespace SimpleEvent
+{
+    class Punkt4
+    {
+        static void Main(string[] args)
+        {
+            int customInterval = 250;
+            Alarm alarm = new Alarm(new TimeSpan(0, 0, 3), customInterval);
+            alarm.AlarmOccured += Alarm_AlarmOccured;
+
+            Console.WriteLine("Uruchomiono Punkt 4 (Parametryzacja checkingInterval).");
+            Console.WriteLine($"Ustawiony checkingInterval: {alarm.CheckingInterval} ms.");
+            Console.WriteLine("Oczekiwanie na alarm...");
+
+            if (!Console.IsInputRedirected)
+            {
+                Console.ReadKey(true);
+            }
+            else
+            {
+                Thread.Sleep(3500);
+            }
+
+            alarm.Dispose();
+            Console.WriteLine("Koniec programu.");
+        }
+
+        private static void Alarm_AlarmOccured(object sender, AlarmEventArgs args)
+        {
+            Console.WriteLine($"{args.Message} at {args.AlarmFiredAt}");
+        }
+    }
+}
+
+--------------------------------------------------------------------------------
+5.2. ПОЯСНЕННЯ ДЛЯ УСНОГО ЗАХИСТУ ПЕРЕД ВИКЛАДАЧЕМ (PUNKT 4)
+--------------------------------------------------------------------------------
+* СУТЬ ЗАВДАННЯ:
+  Раніше інтервал опитування був жорстко зашитий як 1000 мс. У завданні 4 ми створили перевантажені конструктори класу `Alarm(TimeSpan, int checkingInterval)` та `Alarm(DateTime, int checkingInterval)`, а також розширили метод `SetAlarm`. У `Punkt4.cs` ми демонструємо встановлення довільного інтервалу перевірки (250 мс), що забезпечує більшу дискретність та точність спрацьовування сигналізації.
+
+
+################################################################################
+ЧАСТИНА 6. ПРОЄКТ SimpleEvent — ЗАВДАННЯ 5: NOWY EVENT I ODLICZANIE CZASU
+ФАЙЛ: Solutions/SimpleEvent/Punkt5.cs
+################################################################################
+
+--------------------------------------------------------------------------------
+6.1. ПОВНИЙ ВИХІДНИЙ КОД ФАЙЛУ Punkt5.cs
+--------------------------------------------------------------------------------
+using System;
+using System.Threading;
+
+namespace SimpleEvent
+{
+    class Punkt5
+    {
+        static void Main(string[] args)
+        {
+            Alarm alarm = new Alarm(new TimeSpan(0, 0, 4), 500);
+            alarm.ClockTicked += Alarm_ClockTicked;
+            alarm.AlarmOccured += Alarm_AlarmOccured;
+
+            Console.WriteLine("Uruchomiono Punkt 5 (Nowy Event ClockTicked oraz TimespanToAlarm).");
+            Console.WriteLine("Rozpoczecie odliczania...");
+
+            if (!Console.IsInputRedirected)
+            {
+                Console.ReadKey(true);
+            }
+            else
+            {
+                Thread.Sleep(4500);
+            }
+
+            alarm.Dispose();
+            Console.WriteLine("Koniec programu.");
+        }
+
+        private static void Alarm_ClockTicked(object? sender, ClockTickEventArgs e)
+        {
+            if (sender is Alarm a)
+            {
+                Console.WriteLine($"[Tick] Pozostalo: {e.RemainingTime.TotalSeconds:F1} s (TimespanToAlarm: {a.TimespanToAlarm.TotalSeconds:F1} s)");
+            }
+        }
+
+        private static void Alarm_AlarmOccured(object sender, AlarmEventArgs args)
+        {
+            Console.WriteLine($"\n>>> {args.Message} at {args.AlarmFiredAt:HH:mm:ss.fff} <<<");
+        }
+    }
+}
+
+--------------------------------------------------------------------------------
+6.2. ПОЯСНЕННЯ ДЛЯ УСНОГО ЗАХИСТУ ПЕРЕД ВИКЛАДАЧЕМ (PUNKT 5)
+--------------------------------------------------------------------------------
+* СУТЬ ЗАВДАННЯ:
+  У класі `Alarm` створено подію `ClockTicked` та властивість `TimespanToAlarm`. При кожній перевірці часу потік вираховує `timeOfAlarm - DateTime.Now`, оновлює властивість і генерує подію `ClockTicked`, передаючи залишок часу через `ClockTickEventArgs`. Обробник `Alarm_ClockTicked` у консолі щосекунди (або кожні 500 мс) показує зворотний відлік до моменту спрацьовування тривоги.
+
+
+################################################################################
+ЧАСТИНА 7. ПРОЄКТ TimerExample — ЗАВДАННЯ 6: AutoReset = false ТА Interlocked
+ФАЙЛ: Solutions/TimerExample/Punkt6.cs
+################################################################################
+
+--------------------------------------------------------------------------------
+7.1. ПОВНИЙ ВИХІДНИЙ КОД ФАЙЛУ Punkt6.cs
+--------------------------------------------------------------------------------
+using System;
+using System.Threading;
+using S = System.Timers;
+using T = System.Threading;
+
+namespace TimerExample
+{
+    class TimerState
+    {
+        public int Counter;
+    }
+
+    class Punkt6
+    {
+        static void Main(string[] args)
+        {
+            TimerState timerState = new TimerState { Counter = 0 };
+            T.Timer timerThreading = new T.Timer(new T.TimerCallback(TimerTask), timerState, 2000, 1000);
+
+            S.Timer timerSystem = new S.Timer(1500);
+            timerSystem.AutoReset = false;
+            timerSystem.Elapsed += TimerSystem_Elapsed;
+            timerSystem.Start();
+
+            Console.WriteLine("Uruchomiono Punkt 6 (AutoReset = false oraz TimerTask z Interlocked).");
+
+            if (!Console.IsInputRedirected)
+            {
+                Console.ReadKey(true);
+            }
+            else
+            {
+                Thread.Sleep(4000);
+            }
+
+            timerThreading.Dispose();
+            timerSystem.Dispose();
+            Console.WriteLine("Koniec programu.");
+        }
+
+        private static void TimerSystem_Elapsed(object? sender, S.ElapsedEventArgs e)
+        {
+            Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] System timer tick tock (jednorazowy budzik)...");
+        }
+
+        private static void TimerTask(object? timerState)
+        {
+            var state = timerState as TimerState;
+            if (state == null) return;
+            int c = T.Interlocked.Increment(ref state.Counter);
+            Console.WriteLine($"{DateTime.Now:HH:mm:ss.fff}: starting a new callback. Counter = {c}");
+        }
+    }
+}
+
+--------------------------------------------------------------------------------
+7.2. ПОЯСНЕННЯ ДЛЯ УСНОГО ЗАХИСТУ ПЕРЕД ВИКЛАДАЧЕМ (PUNKT 6)
+--------------------------------------------------------------------------------
+* СУТЬ ЗАВДАННЯ:
+  1. `timerSystem.AutoReset = false;`: Перетворює системний таймер на одноразовий буфер. Він відраховує 1,5 секунди, викликає `TimerSystem_Elapsed` і більше автоматично не перезапускається.
+  2. `T.Interlocked.Increment(ref state.Counter);`: Метод `TimerTask` викликається таймером `System.Threading.Timer` у пулі потоків (`ThreadPool`). Оскільки такт таймера може відбутися до того, як попередній завершив роботу, звичайна операція `Counter++` призвела б до стану гонки (Race Condition). Метод `Interlocked.Increment` гарантує атомарну інструкцію інкременту на апаратному рівні процесора без використання важких блокувань `lock`.
+
+
+################################################################################
+ЧАСТИНА 8. ПРОЄКТ TimerExample — ЗАВДАННЯ 7: WYŁĄCZENIE TIMERA PO 5 WYWOŁANIACH
+ФАЙЛ: Solutions/TimerExample/Punkt7.cs
+################################################################################
+
+--------------------------------------------------------------------------------
+8.1. ПОВНИЙ ВИХІДНИЙ КОД ФАЙЛУ Punkt7.cs
+--------------------------------------------------------------------------------
+using System;
+using System.Threading;
+using T = System.Threading;
+
+namespace TimerExample
+{
+    class TimerState
+    {
+        public int Counter;
+        public T.Timer? TimerRef;
+    }
+
+    class Punkt7
+    {
+        static void Main(string[] args)
+        {
+            TimerState timerState = new TimerState { Counter = 0 };
+            T.Timer timerThreading = new T.Timer(new T.TimerCallback(TimerTask), timerState, 1000, 1000);
+            timerState.TimerRef = timerThreading;
+
+            Console.WriteLine("Uruchomiono Punkt 7 (Wyłączenie timera po 5 wywołaniach).");
+            Console.WriteLine("Oczekiwanie na automatyczne wyłączenie timera...");
+
+            if (!Console.IsInputRedirected)
+            {
+                Console.ReadKey(true);
+            }
+            else
+            {
+                Thread.Sleep(6500);
+            }
+
+            timerThreading.Dispose();
+            Console.WriteLine("Koniec programu.");
+        }
+
+        private static void TimerTask(object? timerState)
+        {
+            var state = timerState as TimerState;
+            if (state == null) return;
+
+            int c = T.Interlocked.Increment(ref state.Counter);
+            Console.WriteLine($"{DateTime.Now:HH:mm:ss.fff}: callback nr {c}");
+
+            if (c >= 5)
+            {
+                Console.WriteLine("Osiągnięto 5 wywołań. Wyłączam timer za pomocą timerThreading.Change(Timeout.Infinite, 0)...");
+                state.TimerRef?.Change(T.Timeout.Infinite, 0);
+            }
+        }
+    }
+}
+
+--------------------------------------------------------------------------------
+8.2. ПОЯСНЕННЯ ДЛЯ УСНОГО ЗАХИСТУ ПЕРЕД ВИКЛАДАЧЕМ (PUNKT 7)
+--------------------------------------------------------------------------------
+* СУТЬ ЗАВДАННЯ:
+  Метод `timerThreading.Change(T.Timeout.Infinite, 0);` дозволяє переналаштувати параметри існуючого таймера. Значення `Timeout.Infinite` (-1 мс) у якості затримки першого запуску наказує планувальнику CLR припинити будь-які подальші спрацьовування. Коли лічильник досягає 5 викликів, таймер сам себе вимикає.
+
+================================================================================
+КІНЕЦЬ ЗБІРНИКА КОДІВ ТА ПОЯСНЕНЬ ДЛЯ SPRAWOZDANIE 3
+================================================================================

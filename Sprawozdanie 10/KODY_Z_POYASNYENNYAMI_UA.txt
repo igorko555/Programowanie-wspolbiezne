@@ -1,0 +1,546 @@
+﻿================================================================================
+ПОЛІТЕХНІКА СВЕНТОКШИСЬКА (POLITECHNIKA ŚWIĘTOKRZYSKA)
+ФАКУЛЬТЕТ ЕЛЕКТРОТЕХНІКИ, АВТОМАТИКИ ТА ІНФОРМАТИКИ
+КАФЕДРА ІНФОРМАТИЧНИХ СИСТЕМ
+ПРЕДМЕТ: ПАРАЛЕЛЬНЕ ТА БАГАТОПОТОКОВЕ ПРОГРАМУВАННЯ (PROGRAMOWANIE WSPÓŁBIEŻNE)
+
+СПРАВОЗДАННЯ № 10: ЗААВАНСОВАНЕ ЗРÓВНОЛЕГЛЕННЯ ПЕТЕЛЬ, КЛАС PARALLEL ТА АЛГОРИТМИ ВСПÓŁБЄЖНЕ
+АВТОР: Artem Hizhovskyi | ГРУПА: 3ID11B | ДАТА: 27.11.2026
+================================================================================
+
+РОЗДІЛ 1. ВИХІДНІ КОДИ ПРОГРАМ З ДЕТАЛЬНИМИ ПОРОЗРЯДНИМИ ПОЯСНЕННЯМИ (УКРАЇНСЬКОЮ МОВОЮ)
+
+--------------------------------------------------------------------------------
+1. ФАЙЛ: ParallelControl\Punkt1.cs (Завдання 1: Керування паралельним циклом - Break() vs Stop())
+--------------------------------------------------------------------------------
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace ParallelControl
+{
+    class Punkt1
+    {
+        static void Main(string[] args)
+        {
+            Console.WriteLine("Badanie sterowania petla rownolegla: Break() vs Stop()\n");
+
+            int targetIndex = 42;
+
+            // --- ТЕСТ 1: Використання ParallelLoopState.Break() ---
+            // Метод Break() інформує планувальник, що цикл слід зупинити, АЛЕ гарантує,
+            // що всі ітерації з індексами, МЕНШИМИ за поточний (i < targetIndex),
+            // ОБОВ'ЯЗКОВО виконаються до кінця.
+            // Властивість LowestBreakIteration фіксує найменший номер ітерації, де викликано Break().
+            Console.WriteLine($"1. Test z uzyciem ParallelLoopState.Break() (szukany indeks: {targetIndex})");
+            ParallelLoopResult breakResult = Parallel.For(0, 100, (i, state) =>
+            {
+                if (i == targetIndex)
+                {
+                    state.Break();
+                    Console.WriteLine($"[Watek {Thread.CurrentThread.ManagedThreadId}] Wywolano Break() w iteracji {i}");
+                }
+
+                // Перевірка, чи не перейшов індекс за межі найменшого Break
+                if (state.LowestBreakIteration.HasValue && i > state.LowestBreakIteration.Value)
+                {
+                    return;
+                }
+
+                Thread.Sleep(5);
+            });
+
+            Console.WriteLine($"Wynik Break(): IsCompleted={breakResult.IsCompleted}, LowestBreakIteration={breakResult.LowestBreakIteration}\n");
+
+            // --- ТЕСТ 2: Використання ParallelLoopState.Stop() ---
+            // Метод Stop() прагне НЕГАЙНО перервати всі потоки циклу, не даючи жодних гарантій
+            // щодо виконання попередніх ітерацій.
+            // Потоки перевіряють властивість ShouldExitCurrentIteration і достроково виходять.
+            Console.WriteLine("2. Test z uzyciem ParallelLoopState.Stop()");
+            ParallelLoopResult stopResult = Parallel.For(0, 100, (i, state) =>
+            {
+                if (i == targetIndex)
+                {
+                    state.Stop();
+                    Console.WriteLine($"[Watek {Thread.CurrentThread.ManagedThreadId}] Wywolano Stop() w iteracji {i}");
+                }
+
+                if (state.ShouldExitCurrentIteration)
+                {
+                    return;
+                }
+
+                Thread.Sleep(5);
+            });
+
+            Console.WriteLine($"Wynik Stop(): IsCompleted={stopResult.IsCompleted}, LowestBreakIteration={stopResult.LowestBreakIteration}");
+            Console.WriteLine("\nZadanie Punkt 1 zakonczone.");
+        }
+    }
+}
+
+--------------------------------------------------------------------------------
+2. ФАЙЛ: ParallelReduction\Punkt2.cs (Завдання 2: Оптимізація паралельної редукції - Parallel.For<TLocal>)
+--------------------------------------------------------------------------------
+using System;
+using System.Diagnostics;
+using System.Threading.Tasks;
+
+namespace ParallelReduction
+{
+    class Punkt2
+    {
+        static void Main(string[] args)
+        {
+            const int arraySize = 10000000;
+            Console.WriteLine($"Optymalizacja redukcji wielowatkowej Parallel.For<TLocal> ({arraySize} liczb)\n");
+
+            // Підготовка тестового масиву
+            double[] data = new double[arraySize];
+            for (int i = 0; i < arraySize; i++) data[i] = 1.0;
+
+            // 1. Послідовний підсумок
+            Stopwatch sw = Stopwatch.StartNew();
+            double seqSum = 0;
+            for (int i = 0; i < arraySize; i++)
+            {
+                seqSum += data[i];
+            }
+            sw.Stop();
+            Console.WriteLine($"1. Sekwencyjna petla for         | Suma: {seqSum:F0} | Czas: {sw.ElapsedMilliseconds,5} ms");
+
+            // 2. Наївний Parallel.For із lock усередині тіла ітерації
+            // Демонстрація антипатерну: конкуренція за lock на 10 млн операцій спричиняє величезне падіння швидкості!
+            object lockObj = new object();
+            double naiveSum = 0;
+            sw.Restart();
+            Parallel.For(0, Math.Min(1000000, arraySize), i =>
+            {
+                lock (lockObj)
+                {
+                    naiveSum += data[i];
+                }
+            });
+            sw.Stop();
+            Console.WriteLine($"2. Parallel.For z lock w srodku  | Suma (skala 1M): {naiveSum:F0} | Czas: {sw.ElapsedMilliseconds,5} ms");
+
+            // 3. Високоефективний патерн Parallel.For<TLocal>
+            // Параметри:
+            // 1) Ініціалізація локального стану потоку: () => 0.0 (викликається лише один раз для кожного потоку пулу)
+            // 2) Тіло ітерації: (i, state, localState) => localState + data[i] (накопичення в регістрі потоку БЕЗ ЖОДНОГО LOCK!)
+            // 3) Фінальне злиття: localState => { lock(lockObj) optimizedSum += localState; } (викликається лише РАЗ наприкінці роботи потоку)
+            // Кількість блокувань зменшується з 10 000 000 до 8-16 (кількість ядер CPU)!
+            double optimizedSum = 0;
+            sw.Restart();
+            Parallel.For<double>(0, arraySize,
+                () => 0.0,
+                (i, state, localState) => localState + data[i],
+                localState =>
+                {
+                    lock (lockObj)
+                    {
+                        optimizedSum += localState;
+                    }
+                });
+            sw.Stop();
+            Console.WriteLine($"3. Parallel.For<TLocal> (optym.) | Suma: {optimizedSum:F0} | Czas: {sw.ElapsedMilliseconds,5} ms");
+            Console.WriteLine("\nZadanie Punkt 2 zakonczone.");
+        }
+    }
+}
+
+--------------------------------------------------------------------------------
+3. ФАЙЛ: ParallelSort\Punkt3.cs (Завдання 3: Паралельне сортування злиттям - Parallel MergeSort)
+--------------------------------------------------------------------------------
+using System;
+using System.Diagnostics;
+using System.Threading.Tasks;
+
+namespace ParallelSort
+{
+    class Punkt3
+    {
+        // Поріг переходу на послідовне сортування. Якщо підмасив має менше 4096 елементів,
+        // створення нових завдань Task є недоцільним через накладний час диспетчеризації.
+        const int SequentialThreshold = 4096;
+
+        static void SequentialMergeSort(int[] array, int left, int right)
+        {
+            if (left < right)
+            {
+                int mid = (left + right) / 2;
+                SequentialMergeSort(array, left, mid);
+                SequentialMergeSort(array, mid + 1, right);
+                Merge(array, left, mid, right);
+            }
+        }
+
+        // Паралельний рекурсивний алгоритм "Розділяй і володарюй"
+        static void ParallelMergeSort(int[] array, int left, int right)
+        {
+            if (right - left <= SequentialThreshold)
+            {
+                SequentialMergeSort(array, left, right);
+                return;
+            }
+
+            int mid = (left + right) / 2;
+            
+            // Запуск лівої половини як асинхронного завдання Task
+            Task leftTask = Task.Run(() => ParallelMergeSort(array, left, mid));
+            
+            // Права половина сортується в поточному потоці
+            ParallelMergeSort(array, mid + 1, right);
+            
+            // Очікування завершення лівої половини
+            leftTask.Wait();
+
+            // Злиття двох упорядкованих половин
+            Merge(array, left, mid, right);
+        }
+
+        static void Merge(int[] array, int left, int mid, int right)
+        {
+            int n1 = mid - left + 1;
+            int n2 = right - mid;
+            int[] leftArr = new int[n1];
+            int[] rightArr = new int[n2];
+
+            Array.Copy(array, left, leftArr, 0, n1);
+            Array.Copy(array, mid + 1, rightArr, 0, n2);
+
+            int i = 0, j = 0, k = left;
+            while (i < n1 && j < n2)
+            {
+                if (leftArr[i] <= rightArr[j]) array[k++] = leftArr[i++];
+                else array[k++] = rightArr[j++];
+            }
+            while (i < n1) array[k++] = leftArr[i++];
+            while (j < n2) array[k++] = rightArr[j++];
+        }
+
+        static void Main(string[] args)
+        {
+            const int count = 1000000;
+            Console.WriteLine($"Wspolbiezne sortowanie przez scalanie (MergeSort) dla {count} elementow\n");
+
+            int[] original = new int[count];
+            Random rand = new Random(12345);
+            for (int i = 0; i < count; i++) original[i] = rand.Next();
+
+            // 1. Послідовний тест
+            int[] arrSeq = (int[])original.Clone();
+            Stopwatch sw = Stopwatch.StartNew();
+            SequentialMergeSort(arrSeq, 0, count - 1);
+            sw.Stop();
+            Console.WriteLine($"1. Sekwencyjny MergeSort | Czas: {sw.ElapsedMilliseconds,5} ms");
+
+            // 2. Паралельний тест
+            int[] arrPar = (int[])original.Clone();
+            sw.Restart();
+            ParallelMergeSort(arrPar, 0, count - 1);
+            sw.Stop();
+            Console.WriteLine($"2. Rownolegly MergeSort  | Czas: {sw.ElapsedMilliseconds,5} ms");
+
+            // Перевірка коректності сортування
+            bool isSorted = true;
+            for (int i = 1; i < count; i++)
+            {
+                if (arrPar[i] < arrPar[i - 1])
+                {
+                    isSorted = false;
+                    break;
+                }
+            }
+            Console.WriteLine($"Poprawnosc sortowania: {isSorted}");
+            Console.WriteLine("\nZadanie Punkt 3 zakonczone.");
+        }
+    }
+}
+
+--------------------------------------------------------------------------------
+4. ФАЙЛ: MatrixMultiply\Punkt4.cs (Завдання 4: Паралельне множення матриць)
+--------------------------------------------------------------------------------
+using System;
+using System.Diagnostics;
+using System.Threading.Tasks;
+
+namespace MatrixMultiply
+{
+    class Punkt4
+    {
+        // Класичне множення матриць C = A x B (O(N^3))
+        static double[,] MultiplySequential(double[,] A, double[,] B, int N)
+        {
+            double[,] C = new double[N, N];
+            for (int i = 0; i < N; i++)
+            {
+                for (int j = 0; j < N; j++)
+                {
+                    double sum = 0;
+                    for (int k = 0; k < N; k++)
+                    {
+                        sum += A[i, k] * B[k, j];
+                    }
+                    C[i, j] = sum;
+                }
+            }
+            return C;
+        }
+
+        // Паралельне множення з розподілом обчислення рядків за допомогою Parallel.For
+        static double[,] MultiplyParallel(double[,] A, double[,] B, int N)
+        {
+            double[,] C = new double[N, N];
+            Parallel.For(0, N, i =>
+            {
+                for (int j = 0; j < N; j++)
+                {
+                    double sum = 0;
+                    for (int k = 0; k < N; k++)
+                    {
+                        sum += A[i, k] * B[k, j];
+                    }
+                    C[i, j] = sum;
+                }
+            });
+            return C;
+        }
+
+        static void Main(string[] args)
+        {
+            const int N = 500;
+            Console.WriteLine($"Mnozenie macierzy {N}x{N} (sekwencyjne vs rownolegle)\n");
+
+            double[,] A = new double[N, N];
+            double[,] B = new double[N, N];
+            for (int i = 0; i < N; i++)
+            {
+                for (int j = 0; j < N; j++)
+                {
+                    A[i, j] = 1.0;
+                    B[i, j] = 2.0;
+                }
+            }
+
+            Stopwatch sw = Stopwatch.StartNew();
+            double[,] C1 = MultiplySequential(A, B, N);
+            sw.Stop();
+            Console.WriteLine($"1. Mnozenie sekwencyjne | Czas: {sw.ElapsedMilliseconds,5} ms | C[0,0] = {C1[0, 0]}");
+
+            sw.Restart();
+            double[,] C2 = MultiplyParallel(A, B, N);
+            sw.Stop();
+            Console.WriteLine($"2. Mnozenie rownolegle  | Czas: {sw.ElapsedMilliseconds,5} ms | C[0,0] = {C2[0, 0]}");
+
+            // Перевірка збігу результатів
+            bool match = true;
+            for (int i = 0; i < N && match; i++)
+            {
+                for (int j = 0; j < N; j++)
+                {
+                    if (Math.Abs(C1[i, j] - C2[i, j]) > 1e-6)
+                    {
+                        match = false;
+                        break;
+                    }
+                }
+            }
+            Console.WriteLine($"Zgodnosc wynikow: {match}");
+            Console.WriteLine("\nZadanie Punkt 4 zakonczone.");
+        }
+    }
+}
+
+--------------------------------------------------------------------------------
+5. ФАЙЛ: Metaheuristics\Punkt5.cs (Завдання 5: Паралельний мурашиний алгоритм ACO для задачі TSP)
+--------------------------------------------------------------------------------
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace Metaheuristics
+{
+    class Punkt5
+    {
+        static readonly int numCities = 20;
+        static readonly int numAnts = 30;
+        static readonly int iterations = 50;
+        static readonly double alpha = 1.0;
+        static readonly double beta = 2.0;
+        static readonly double rho = 0.5;
+
+        static double[,] dist = new double[numCities, numCities];
+        static double[,] pheromone = new double[numCities, numCities];
+
+        static void InitProblem()
+        {
+            Random r = new Random(42);
+            double[] x = new double[numCities];
+            double[] y = new double[numCities];
+            for (int i = 0; i < numCities; i++)
+            {
+                x[i] = r.NextDouble() * 100;
+                y[i] = r.NextDouble() * 100;
+            }
+
+            for (int i = 0; i < numCities; i++)
+            {
+                for (int j = 0; j < numCities; j++)
+                {
+                    dist[i, j] = Math.Sqrt(Math.Pow(x[i] - x[j], 2) + Math.Pow(y[i] - y[j], 2));
+                    pheromone[i, j] = 1.0;
+                }
+            }
+        }
+
+        // Побудова маршруту окремою мурахою (ймовірнісний вибір наступного міста на основі феромонів та евристики)
+        static (int[] tour, double length) BuildAntTour()
+        {
+            bool[] visited = new bool[numCities];
+            int[] tour = new int[numCities];
+            int current = Random.Shared.Next(numCities);
+            tour[0] = current;
+            visited[current] = true;
+
+            for (int step = 1; step < numCities; step++)
+            {
+                double[] probs = new double[numCities];
+                double sum = 0;
+
+                for (int next = 0; next < numCities; next++)
+                {
+                    if (!visited[next])
+                    {
+                        double eta = 1.0 / Math.Max(0.1, dist[current, next]);
+                        probs[next] = Math.Pow(pheromone[current, next], alpha) * Math.Pow(eta, beta);
+                        sum += probs[next];
+                    }
+                }
+
+                double randVal = Random.Shared.NextDouble() * sum;
+                double acc = 0;
+                int chosen = -1;
+                for (int next = 0; next < numCities; next++)
+                {
+                    if (!visited[next])
+                    {
+                        acc += probs[next];
+                        if (acc >= randVal)
+                        {
+                            chosen = next;
+                            break;
+                        }
+                    }
+                }
+
+                if (chosen == -1)
+                {
+                    for (int next = 0; next < numCities; next++)
+                    {
+                        if (!visited[next]) { chosen = next; break; }
+                    }
+                }
+
+                tour[step] = chosen;
+                visited[chosen] = true;
+                current = chosen;
+            }
+
+            double len = 0;
+            for (int i = 0; i < numCities - 1; i++) len += dist[tour[i], tour[i + 1]];
+            len += dist[tour[numCities - 1], tour[0]];
+
+            return (tour, len);
+        }
+
+        static void Main(string[] args)
+        {
+            Console.WriteLine($"Rownolegly Algorytm Mrowkowy (ACO) dla problemu TSP ({numCities} miast, {numAnts} mrowek)\n");
+
+            InitProblem();
+            double bestLength = double.MaxValue;
+            object lockObj = new object();
+
+            Stopwatch sw = Stopwatch.StartNew();
+
+            for (int iter = 0; iter < iterations; iter++)
+            {
+                (int[] tour, double length)[] antResults = new (int[], double)[numAnts];
+
+                // Паралельний запуск агентів-мурах через Parallel.For
+                Parallel.For(0, numAnts, ant =>
+                {
+                    antResults[ant] = BuildAntTour();
+                });
+
+                // Синхронне випаровування феромонів
+                for (int i = 0; i < numCities; i++)
+                {
+                    for (int j = 0; j < numCities; j++)
+                    {
+                        pheromone[i, j] *= (1.0 - rho);
+                    }
+                }
+
+                // Нанесення феромонів мурахами на відвідані ребра
+                foreach (var ant in antResults)
+                {
+                    double dTau = 100.0 / ant.length;
+                    for (int step = 0; step < numCities - 1; step++)
+                    {
+                        int u = ant.tour[step];
+                        int v = ant.tour[step + 1];
+                        pheromone[u, v] += dTau;
+                        pheromone[v, u] += dTau;
+                    }
+
+                    if (ant.length < bestLength)
+                    {
+                        bestLength = ant.length;
+                    }
+                }
+
+                if (iter % 10 == 0 || iter == iterations - 1)
+                {
+                    Console.WriteLine($"Generacja {iter,2} | Najlepsza trasa: {bestLength:F2}");
+                }
+            }
+
+            sw.Stop();
+            Console.WriteLine($"\nOptymalizacja ACO zakonczona w czasie: {sw.ElapsedMilliseconds} ms");
+            Console.WriteLine("\nZadanie Punkt 5 zakonczone.");
+        }
+    }
+}
+
+
+================================================================================
+РОЗДІЛ 2. ШПАРГАЛКА ДЛЯ УСНОГО ЗАХИСТУ ПЕРЕД ВИКЛАДАЧЕМ
+================================================================================
+
+1. У чому полягає відмінність між ParallelLoopState.Break() та Stop()?
+ВІДПОВІДЬ:
+- Break(): повідомляє циклу припинити подальшу ітерацію, АЛЕ гарантує виконання всіх ітерацій з номерами менше i (ранні ітерації). Це семантичний еквівалент звичайного break у послідовному циклі (наприклад, для пошуку першого входження елемента). Фіксує LowestBreakIteration.
+- Stop(): сигналізує всім потокам циклу негайно зупинитися якомога швидше. Не дає жодних гарантій виконання попередніх ітерацій. Ідеально підходить для задач, де знайдено хоча б одне довільне рішення і всі інші обчислення стають зайвими.
+
+2. Чому перевантаження Parallel.For<TLocal> забезпечує колосальний виграш у швидкості при редукції?
+ВІДПОВІДЬ:
+- При класичній редукції (наприклад, підсумовуванні масиву на 10 млн чисел) наївний паралельний цикл виконує lock (lockObj) sum += data[i]; на кожній ітерації. 10 000 000 захоплень блокування призводять до катастрофічного lock contention і кеш-колізій.
+- Перевантаження Parallel.For<TLocal> вводить локальну змінну стану для кожного робочого потоку (Thread Local State). Потік накопичує проміжну суму у власному процесорному регістрі абсолютно без блокувань.
+- Блокування викликається рівно ОДИН РАЗ наприкінці роботи потоку (action finalizer), коли локальна сума потоку додається до загальної суми. Кількість операцій lock падає з 10 000 000 до кількох одиниць (за кількістю ядер CPU)!
+
+3. Навіщо у паралельному MergeSort потрібен поріг послідовного відсікання (Sequential Threshold)?
+ВІДПОВІДЬ:
+- Якщо рекурсивно створювати завдання Task.Run() для кожної пари елементів аж до масивів довжиною 1 або 2, ми створимо мільйони дрібних об'єктів Task.
+- Накладний час на алокацію пам'яті для об'єкта Task, збереження контексту, постановку в чергу пулу та виклик планувальника значно перевищує час виконання кількох процесорних операцій порівняння.
+- Введення порогу (наприклад, N <= 4096) дозволяє відсікти паралелізм на нижніх рівнях дерева рекурсії і передати дрібні масиви швидкому послідовному алгоритму, отримуючи максимальний виграш від паралелізму на верхніх рівнях.
+
+4. Чому паралельне множення матриць рядками не потребує синхронізації?
+ВІДПОВІДЬ:
+- При множенні матриць  = A \times B$ кожен елемент результуючої матриці [i, j]$ залежить виключно від $-го рядка матриці $ та $-го стовпця матриці $.
+- Розподіл зовнішнього циклу за рядками Parallel.For(0, N, i => ...) гарантує, що потік, який обробляє рядок $, записує дані виключно в елементи [i, *]$.
+- Жоден інший потік ніколи не намагається писати в цей же рядок. Потоки лише читають матриці $ і $, а одночасне читання є повністю потокобезпечним. Це класична "природно паралельна" задача (Embarrassingly Parallel).

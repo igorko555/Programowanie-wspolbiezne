@@ -1,0 +1,127 @@
+{
+  "settings": {
+    "components": {
+      "code": true,
+      "binaries": true
+    },
+    "targetId": "",
+    "targetDisplayName": ".NET 8.0"
+  },
+  "analysisStartTime": "2024-10-16T10:18:55.3785369Z",
+  "analysisEndTime": "2024-10-16T10:19:20.1557431Z",
+  "privacyModeHelpUrl": "https://go.microsoft.com/fwlink/?linkid=2270980",
+  "stats": {
+    "summary": {
+      "projects": 3,
+      "issues": 1,
+      "incidents": 3,
+      "effort": 3
+    },
+    "charts": {
+      "severity": {
+        "Mandatory": 3,
+        "Optional": 0,
+        "Potential": 0,
+        "Information": 0
+      },
+      "category": {
+        "Project": 3
+      }
+    }
+  },
+  "projects": [
+    {
+      "path": "SimpleDelegate\\SimpleDelegate.csproj",
+      "startingProject": true,
+      "issues": 1,
+      "storyPoints": 1,
+      "ruleInstances": [
+        {
+          "incidentId": "4be1c3af-0c52-4930-9482-14b846812c29",
+          "ruleId": "Project.0002",
+          "projectPath": "SimpleDelegate\\SimpleDelegate.csproj",
+          "state": "Active",
+          "location": {
+            "snippetModel": {
+              "unrestricted": "Current: netcoreapp3.1\nNew: net8.0",
+              "protected": "Current: netcoreapp3.1\nNew: net8.0"
+            },
+            "kind": "File",
+            "path": "SimpleDelegate\\SimpleDelegate.csproj",
+            "snippet": "Current: netcoreapp3.1\nNew: net8.0",
+            "protectedSnippet": "Current: netcoreapp3.1\nNew: net8.0"
+          }
+        }
+      ]
+    },
+    {
+      "path": "SimpleEvent\\SimpleEvent.csproj",
+      "startingProject": true,
+      "issues": 1,
+      "storyPoints": 1,
+      "ruleInstances": [
+        {
+          "incidentId": "363902f1-a6a9-4317-8358-0eb36914b325",
+          "ruleId": "Project.0002",
+          "projectPath": "SimpleEvent\\SimpleEvent.csproj",
+          "state": "Active",
+          "location": {
+            "snippetModel": {
+              "unrestricted": "Current: netcoreapp3.1\nNew: net8.0",
+              "protected": "Current: netcoreapp3.1\nNew: net8.0"
+            },
+            "kind": "File",
+            "path": "SimpleEvent\\SimpleEvent.csproj",
+            "snippet": "Current: netcoreapp3.1\nNew: net8.0",
+            "protectedSnippet": "Current: netcoreapp3.1\nNew: net8.0"
+          }
+        }
+      ]
+    },
+    {
+      "path": "TimerExample\\TimerExample.csproj",
+      "startingProject": true,
+      "issues": 1,
+      "storyPoints": 1,
+      "ruleInstances": [
+        {
+          "incidentId": "e050f65c-6acf-40c8-9386-9e8728dd0663",
+          "ruleId": "Project.0002",
+          "projectPath": "TimerExample\\TimerExample.csproj",
+          "state": "Active",
+          "location": {
+            "snippetModel": {
+              "unrestricted": "Current: netcoreapp3.1\nNew: net8.0",
+              "protected": "Current: netcoreapp3.1\nNew: net8.0"
+            },
+            "kind": "File",
+            "path": "TimerExample\\TimerExample.csproj",
+            "snippet": "Current: netcoreapp3.1\nNew: net8.0",
+            "protectedSnippet": "Current: netcoreapp3.1\nNew: net8.0"
+          }
+        }
+      ]
+    }
+  ],
+  "rules": {
+    "Project.0002": {
+      "id": "Project.0002",
+      "description": "Project\u0027s target framework(s) needs to be changed to the new target framework that you selected for this upgrade.\n\nDuring upgrade target framework will be adjusted to corresponding platform when applicable. In some cases project would result in multiple target frameworks after the upgrade if it was using features that now have their own platforms in moderrn .NET frameworks (windows, iOS, Android etc).",
+      "label": "Project\u0027s target framework(s) needs to be changed",
+      "severity": "Mandatory",
+      "effort": 1,
+      "links": [
+        {
+          "title": "Overview of porting from .NET Framework to .NET",
+          "url": "https://go.microsoft.com/fwlink/?linkid=2265227",
+          "isCustom": false
+        },
+        {
+          "title": ".NET project SDKs",
+          "url": "https://go.microsoft.com/fwlink/?linkid=2265226",
+          "isCustom": false
+        }
+      ]
+    }
+  }
+}

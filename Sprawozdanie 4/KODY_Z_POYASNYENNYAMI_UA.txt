@@ -1,0 +1,540 @@
+﻿================================================================================
+ПОЛІТЕХНІКА СВЕНТОКШИСЬКА (POLITECHNIKA ŚWIĘTOKRZYSKA)
+ФАКУЛЬТЕТ ЕЛЕКТРОТЕХНІКИ, АВТОМАТИКИ ТА ІНФОРМАТИКИ
+КАФЕДРА ІНФОРМАТИЧНИХ СИСТЕМ
+ПРЕДМЕТ: ПАРАЛЕЛЬНЕ ТА БАГАТОПОТОКОВЕ ПРОГРАМУВАННЯ (PROGRAMOWANIE WSPÓŁBIEŻNE)
+
+СПРАВОЗДАННЯ № 4: МЕХАНІЗМИ СИНХРОНІЗАЦІЇ ПОТОКІВ (.NET WAITHANDLES І СЕКЦІЇ КРИТИЧНІ)
+АВТОР: Artem Hizhovskyi | ГРУПА: 3ID11B | ДАТА: 16.10.2026
+================================================================================
+
+РОЗДІЛ 1. ВИХІДНІ КОДИ ПРОГРАМ З ДЕТАЛЬНИМИ ПОРОЗРЯДНИМИ ПОЯСНЕННЯМИ (УКРАЇНСЬКОЮ МОВОЮ)
+
+--------------------------------------------------------------------------------
+1. ФАЙЛ: ProducentKonsument\Punkt2.cs (Завдання 2: Аналіз генерації псевдовипадкових чисел та стану гонки)
+--------------------------------------------------------------------------------
+using System;
+using System.Collections.Generic;
+using System.Threading;
+
+namespace ProducentKonsument
+{
+    class Punkt2
+    {
+        // Спільна змінна лічильника, до якої одночасно звертаються виробник і споживачі
+        static int licznik = 0;
+        
+        // Кількість потоків-споживачів (10 потоків)
+        static readonly int liczbaWatkow = 10;
+        
+        // Кількість ітерацій для кожного споживача (10 кроків)
+        static readonly int liczbaIteracji = 10;
+
+        static void Main(string[] args)
+        {
+            // Список для збереження посилань на створені потоки-споживачі
+            List<Thread> watkiKonsument = new List<Thread>();
+
+            // Цикл створення та запуску потоків споживачів
+            for (int i = 0; i < liczbaWatkow; i++)
+            {
+                var konsument = new Thread(() =>
+                {
+                    // Ініціалізація локального генератора Random із сідом, що базується на ManagedThreadId.
+                    // УВАГА: Якщо використати new Random() без параметрів, потоки, створені в один момент часу,
+                    // отримають однаковий сід на базі системного годинника і видаватимуть ідентичні послідовності.
+                    // Якщо використати один спільний static Random, виникне стан гонки всередині самого генератора,
+                    // через що він зламається і повертатиме виключно нулі (0).
+                    Random rand = new Random(Thread.CurrentThread.ManagedThreadId);
+
+                    for (int j = 0; j < liczbaIteracji; j++)
+                    {
+                        // Випадкова затримка від 100 до 300 мс для імітації навантаження споживача
+                        var czasUspienia = rand.Next(100, 300);
+                        Thread.Sleep(czasUspienia);
+                        
+                        // Зчитування та вивід значення лічильника без синхронізації (спостерігаються пропуски та дублі)
+                        Console.WriteLine($"Konsument [{Thread.CurrentThread.ManagedThreadId}] odczytal licznik: {licznik} (sleep: {czasUspienia}ms)");
+                    }
+                });
+                watkiKonsument.Add(konsument);
+                konsument.Start();
+            }
+
+            // Створення потоку-виробника, який безперервно генерує дані
+            Thread watekProducent = new Thread(() =>
+            {
+                Random randPiszacy = new Random(Thread.CurrentThread.ManagedThreadId);
+                try
+                {
+                    while (true)
+                    {
+                        // Коротка пауза між генераціями чисел
+                        Thread.Sleep(randPiszacy.Next(50, 150));
+                        
+                        // Атомарна інкрементація лічильника (захищає саму операцію ++, але не захищає від гонки при зчитуванні)
+                        Interlocked.Increment(ref licznik);
+                    }
+                }
+                catch (ThreadInterruptedException)
+                {
+                    // Коректний вихід із потоку при отриманні сигналу переривання
+                    Console.WriteLine("\nWatek piszacy zostal zakonczony.");
+                }
+            });
+
+            watekProducent.Start();
+
+            // Очікування завершення роботи всіх споживачів
+            foreach (var watek in watkiKonsument)
+            {
+                watek.Join();
+            }
+
+            // Зупинка нескінченного циклу виробника за допомогою переривання Interrupt
+            watekProducent.Interrupt();
+            watekProducent.Join();
+
+            Console.WriteLine($"Koniec programu. Ostateczna wartosc licznika: {licznik}");
+        }
+    }
+}
+
+--------------------------------------------------------------------------------
+2. ФАЙЛ: ProducentKonsument\Punkt3.cs (Завдання 3: Синхронізація на базі AutoResetEvent)
+--------------------------------------------------------------------------------
+using System;
+using System.Collections.Generic;
+using System.Threading;
+
+namespace ProducentKonsument
+{
+    class Punkt3
+    {
+        // Спільний ресурс
+        static int licznik = 0;
+        static readonly int liczbaWatkow = 5;
+        static readonly int liczbaIteracji = 5;
+
+        // Подія дозволу запису (початково відкрита - true, виробник може відразу писати)
+        static EventWaitHandle pisanie = new AutoResetEvent(true);
+        
+        // Подія дозволу читання (початково закрита - false, споживачі чекають першого запису)
+        static EventWaitHandle czytanie = new AutoResetEvent(false);
+
+        static void Main(string[] args)
+        {
+            List<Thread> watkiKonsument = new List<Thread>();
+
+            // Запуск пулу споживачів
+            for (int i = 0; i < liczbaWatkow; i++)
+            {
+                var konsument = new Thread(() =>
+                {
+                    for (int j = 0; j < liczbaIteracji; j++)
+                    {
+                        // Очікування дозволу на читання. AutoResetEvent автоматично закривається після пропуску одного потоку!
+                        czytanie.WaitOne();
+                        
+                        Console.WriteLine($"Konsument [{Thread.CurrentThread.ManagedThreadId}] pobral wartosc: {licznik}");
+                        
+                        // Дозвіл виробнику записати наступне значення
+                        pisanie.Set();
+                    }
+                });
+                watkiKonsument.Add(konsument);
+                konsument.Start();
+            }
+
+            // Потік-виробник
+            Thread watekProducent = new Thread(() =>
+            {
+                int calkowitaLiczbaZadan = liczbaWatkow * liczbaIteracji;
+                for (int k = 1; k <= calkowitaLiczbaZadan; k++)
+                {
+                    // Очікування дозволу на запис від попереднього споживача
+                    pisanie.WaitOne();
+                    
+                    licznik = k;
+                    Console.WriteLine($"Producent wygenerowal wartosc: {licznik}");
+                    
+                    // Сигнал одному зі споживачів про наявність нового значення
+                    czytanie.Set();
+                }
+            });
+
+            watekProducent.Start();
+
+            // Очікування завершення
+            foreach (var watek in watkiKonsument)
+            {
+                watek.Join();
+            }
+
+            watekProducent.Join();
+
+            Console.WriteLine($"Koniec programu. Wszystkie dane zostaly przeslane bez strat.");
+        }
+    }
+}
+
+--------------------------------------------------------------------------------
+3. ФАЙЛ: ProducentKonsument\Punkt4.cs (Завдання 4: Застосування ManualResetEvent та стан гонки)
+--------------------------------------------------------------------------------
+using System;
+using System.Collections.Generic;
+using System.Threading;
+
+namespace ProducentKonsument
+{
+    class Punkt4
+    {
+        static int licznik = 0;
+        static readonly int liczbaWatkow = 5;
+        static readonly int liczbaIteracji = 5;
+
+        // Використання ManualResetEvent замість AutoResetEvent
+        // ManualResetEvent залишається сигнальним (відкритим) для ВСІХ потоків, доки не буде викликано Reset()!
+        static ManualResetEvent pisanie = new ManualResetEvent(true);
+        static ManualResetEvent czytanie = new ManualResetEvent(false);
+        
+        // Об'єкт синхронізації для захисту критичної секції зчитування та скидання
+        static readonly object lockObj = new object();
+
+        static void Main(string[] args)
+        {
+            List<Thread> watkiKonsument = new List<Thread>();
+
+            for (int i = 0; i < liczbaWatkow; i++)
+            {
+                var konsument = new Thread(() =>
+                {
+                    for (int j = 0; j < liczbaIteracji; j++)
+                    {
+                        // Блок lock гарантує, що лише один потік пройде WaitOne, прочитає і скине bramke (Reset),
+                        // запобігаючи масовому витоку споживачів через відчинений ManualResetEvent.
+                        lock (lockObj)
+                        {
+                            czytanie.WaitOne();
+                            czytanie.Reset();
+                            Console.WriteLine($"Konsument [{Thread.CurrentThread.ManagedThreadId}] pobral wartosc: {licznik}");
+                            pisanie.Set();
+                        }
+                    }
+                });
+                watkiKonsument.Add(konsument);
+                konsument.Start();
+            }
+
+            Thread watekProducent = new Thread(() =>
+            {
+                int calkowitaLiczbaZadan = liczbaWatkow * liczbaIteracji;
+                for (int k = 1; k <= calkowitaLiczbaZadan; k++)
+                {
+                    pisanie.WaitOne();
+                    pisanie.Reset();
+                    licznik = k;
+                    Console.WriteLine($"Producent [ManualResetEvent] wpisal: {licznik}");
+                    czytanie.Set();
+                }
+            });
+
+            watekProducent.Start();
+
+            foreach (var watek in watkiKonsument)
+            {
+                watek.Join();
+            }
+
+            watekProducent.Join();
+
+            Console.WriteLine($"Koniec programu Punkt 4.");
+        }
+    }
+}
+
+--------------------------------------------------------------------------------
+4. ФАЙЛ: Spotkania\Punkt5.cs (Завдання 5: Патерн Rendezvous - WaitHandle.SignalAndWait)
+--------------------------------------------------------------------------------
+using System;
+using System.Threading;
+
+namespace Spotkania
+{
+    class Punkt5
+    {
+        // Дві сигнальні події для кожного з двох зустрічних потоків
+        private static readonly EventWaitHandle wh1 = new EventWaitHandle(false, EventResetMode.AutoReset);
+        private static readonly EventWaitHandle wh2 = new EventWaitHandle(false, EventResetMode.AutoReset);
+        private static readonly int liczbaIteracji = 5;
+        private static Random rand = new Random();
+
+        static void Main(string[] args)
+        {
+            // Потік 1 із швидшим часом сну
+            var watek1 = new Thread(() =>
+            {
+                for (int i = 0; i < liczbaIteracji; i++)
+                {
+                    int delay = rand.Next(200, 600);
+                    Thread.Sleep(delay);
+                    
+                    // Атомарна операція: сигналізує wh1 (повідомляє другий потік) і очікує сигналу від wh2
+                    WaitHandle.SignalAndWait(wh1, wh2);
+                    
+                    Console.WriteLine($"Tadam watek 1 dotarl do punktu spotkania w iteracji {i} (sleep: {delay}ms)");
+                }
+            });
+
+            // Потік 2 із значно повільнішим часом сну
+            var watek2 = new Thread(() =>
+            {
+                for (int i = 0; i < liczbaIteracji; i++)
+                {
+                    int delay = rand.Next(700, 1500);
+                    Thread.Sleep(delay);
+                    
+                    // Атомарна операція: сигналізує wh2 (повідомляє перший потік) і очікує сигналу від wh1
+                    WaitHandle.SignalAndWait(wh2, wh1);
+                    
+                    Console.WriteLine($"Tadam watek 2 dotarl do punktu spotkania w iteracji {i} (sleep: {delay}ms)");
+                }
+            });
+
+            watek1.Start();
+            watek2.Start();
+
+            watek1.Join();
+            watek2.Join();
+
+            Console.WriteLine("Koniec demonstracji wzorca Rendezvous.");
+        }
+    }
+}
+
+--------------------------------------------------------------------------------
+5. ФАЙЛ: SynchroWait\Punkt6.cs (Завдання 6: Очікування на одного та всіх - WaitAny та WaitAll)
+--------------------------------------------------------------------------------
+using System;
+using System.Collections.Generic;
+using System.Threading;
+
+namespace SynchroWait
+{
+    class Punkt6
+    {
+        static readonly int liczbaIteracji = 5;
+        static readonly int liczbaWatkow = 10;
+        
+        // Масив подій очікування для кожного з 10 потоків
+        static WaitHandle[] handles = new WaitHandle[liczbaWatkow];
+        static List<Thread> watki = new List<Thread>();
+        static Random rand = new Random();
+
+        static void Main(string[] args)
+        {
+            // Ініціалізація ManualResetEvent. Використання ManualResetEvent критично важливе:
+            // якби використовувався AutoResetEvent, то виклик WaitAny автоматично скинув би подію першого потоку в false,
+            // і подальший виклик WaitAll завис би назавжди (Deadlock), бо перший потік уже завершився і ніколи знову не сигналізував би!
+            for (int i = 0; i < liczbaWatkow; i++)
+            {
+                handles[i] = new ManualResetEvent(false);
+            }
+
+            for (int i = 0; i < liczbaWatkow; i++)
+            {
+                var watek = new Thread((o) =>
+                {
+                    int nrWatku = (int)o;
+                    Thread.Sleep(rand.Next(50, 200));
+                    Console.WriteLine($"Watek nr {nrWatku} wystartowal.");
+
+                    for (int j = 0; j < liczbaIteracji; j++)
+                    {
+                        Console.WriteLine($"Watek nr {nrWatku} wykonuje krok {j}");
+                        Thread.Sleep(rand.Next(50, 150));
+                    }
+
+                    Console.WriteLine($"Watek nr {nrWatku} zakonczyl prace i sygnalizuje uchwyt.");
+                    // Сигналізуємо відповідну подію в масиві
+                    ((ManualResetEvent)handles[nrWatku]).Set();
+                });
+
+                watki.Add(watek);
+                watek.Start(i);
+            }
+
+            // Очікування на завершення ПЕРШОГО з потоків
+            int firstFinished = WaitHandle.WaitAny(handles);
+            Console.WriteLine($"---------------- Doczekalismy sie pierwszego watku (nr {firstFinished}) -----------------");
+
+            // Очікування на завершення ВСІХ потоків
+            WaitHandle.WaitAll(handles);
+            Console.WriteLine("---------------- Doczekalismy sie wszystkich watkow -----------------");
+
+            foreach (var w in watki)
+            {
+                w.Join();
+            }
+
+            Console.WriteLine("Koniec programu SynchroWait.");
+        }
+    }
+}
+
+--------------------------------------------------------------------------------
+6. ФАЙЛ: MuteksyIReszta\Punkt7.cs (Завдання 7: Великий бенчмарк критичних секцій - Lock, Mutex, Semaphore, SemaphoreSlim)
+--------------------------------------------------------------------------------
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Threading;
+
+namespace MuteksyIReszta
+{
+    class Punkt7
+    {
+        // Параметри навантаження: 100 потоків по 10 000 ітерацій = 1 000 000 інкрементацій
+        static readonly int liczbaIteracji = 10000;
+        static readonly int liczbaWatkow = 100;
+
+        static int licznik = 0;
+        
+        // Примітиви синхронізації
+        static readonly object locker = new object();
+        static readonly Mutex mutex = new Mutex();
+        static readonly Semaphore semaphore = new Semaphore(1, 1);
+        static readonly SemaphoreSlim semaphoreSlim = new SemaphoreSlim(1, 1);
+
+        // Універсальний метод вимірювання часу виконання для переданого варіанта синхронізації
+        static void RunBenchmark(string nazwaWariantu, Action akcjaInkrementacji)
+        {
+            licznik = 0;
+            List<Thread> watki = new List<Thread>();
+            Stopwatch sw = Stopwatch.StartNew();
+
+            for (int i = 0; i < liczbaWatkow; i++)
+            {
+                var watek = new Thread(() =>
+                {
+                    for (int j = 0; j < liczbaIteracji; j++)
+                    {
+                        akcjaInkrementacji();
+                    }
+                });
+                watki.Add(watek);
+                watek.Start();
+            }
+
+            foreach (var w in watki)
+            {
+                w.Join();
+            }
+
+            sw.Stop();
+            Console.WriteLine($"Wariant: {nazwaWariantu,-22} | Licznik: {licznik,8} | Czas: {sw.ElapsedMilliseconds,5} ms");
+        }
+
+        static void Main(string[] args)
+        {
+            Console.WriteLine($"Rozpoczynam benchmark (watki: {liczbaWatkow}, iteracje: {liczbaIteracji}, oczekiwana suma: {liczbaWatkow * liczbaIteracji})\n");
+
+            // 1. Варіант без синхронізації: максимальна швидкість (~12 ms), але стан гонки і втрата даних (значення менше 1 000 000)
+            RunBenchmark("1. Brak synchronizacji", () =>
+            {
+                licznik++;
+            });
+
+            // 2. Варіант lock (Monitor): користувацький монітор CLR, швидкий і надійний (~77 ms, результат рівно 1 000 000)
+            RunBenchmark("2. Lock (Monitor)", () =>
+            {
+                lock (locker)
+                {
+                    licznik++;
+                }
+            });
+
+            // 3. Варіант Mutex: системний об'єкт ядра OS. Перехід контексту в ядро призводить до затримки (~5400 ms, в 70 разів повільніше!)
+            RunBenchmark("3. Mutex", () =>
+            {
+                mutex.WaitOne();
+                try
+                {
+                    licznik++;
+                }
+                finally
+                {
+                    mutex.ReleaseMutex();
+                }
+            });
+
+            // 4. Варіант Semaphore(1, 1): двійковий семафор ядра OS (~5600 ms, колосальний накладний час)
+            RunBenchmark("4. Semaphore(1, 1)", () =>
+            {
+                semaphore.WaitOne();
+                try
+                {
+                    licznik++;
+                }
+                finally
+                {
+                    semaphore.Release();
+                }
+            });
+
+            // 5. Варіант SemaphoreSlim(1, 1): оптимізований семафор простору користувача (~125 ms, поєднує спін-очікування з подією ядра)
+            RunBenchmark("5. SemaphoreSlim(1, 1)", () =>
+            {
+                semaphoreSlim.Wait();
+                try
+                {
+                    licznik++;
+                }
+                finally
+                {
+                    semaphoreSlim.Release();
+                }
+            });
+
+            Console.WriteLine("\nBenchmark zakonczony.");
+        }
+    }
+}
+
+
+================================================================================
+РОЗДІЛ 2. ШПАРГАЛКА ДЛЯ УСНОГО ЗАХИСТУ ПЕРЕД ВИКЛАДАЧЕМ
+================================================================================
+
+1. У чому полягає різниця між AutoResetEvent та ManualResetEvent?
+ВІДПОВІДЬ:
+- AutoResetEvent: працює як автоматичний турнікет. Коли викликається метод Set(), він переходить у сигнальний стан і пропускає рівно ОДИН потік, після чого миттєво автоматично скидається в несигнальний стан (Reset).
+- ManualResetEvent: працює як відкриті ворота. Коли викликається Set(), він пропускає ВСІ потоки, які чекають у WaitOne(), і залишається відкритим доти, доки хтось явно не викличе метод Reset(). Якщо кілька потоків чекають на ManualResetEvent, вони всі одночасно продовжать виконання.
+
+2. Чому виникає небезпека взаємного блокування (Deadlock) у завданні 6 при використанні AutoResetEvent?
+ВІДПОВІДЬ:
+- Якщо масив uchwytów містить AutoResetEvent, то перший потік, який завершує роботу, переводить свій об'єкт у стан Set().
+- Метод WaitHandle.WaitAny(handles) повертає індекс цього першого потоку і одночасно АВТОМАТИЧНО скидає його подію в false.
+- Потім викликається WaitHandle.WaitAll(handles). Для успішного проходження цей метод вимагає, щоб УСІ події в масиві були в стані true. Але подія першого потоку вже скинута в false, а сам потік уже помер і більше ніколи не викличе Set(). У результаті WaitAll чекатиме вічно — класичний Deadlock.
+- Розв'язання: використання ManualResetEvent, який не скидається при виклику WaitAny.
+
+3. Чому Random не є потокобезпечним (thread-safe) і що відбувається при конкурентному доступі?
+ВІДПОВІДЬ:
+- Внутрішній стан класу Random базується на алгоритмі лінійного конгруентного генератора або модифікованого алгоритму Кнута зі зсувом масиву станів.
+- Якщо кілька потоків одночасно викликають rand.Next(), вони паралельно модифікують внутрішній індекс та масив насіння без синхронізації.
+- Це призводить до стану гонки всередині пам'яті генератора, через що внутрішній масив заповнюється нулями, і метод Next() починає повертати виключно нулі (0), або викидає IndexOutOfRangeException.
+- Крім того, створення new Random() у швидкому циклі використовує однаковий час з Environment.TickCount як сід, генеруючи однакові послідовності в різних потоках.
+
+4. Що таке патерн "Rendezvous" (Зустріч) і як працює WaitHandle.SignalAndWait?
+ВІДПОВІДЬ:
+- Rendezvous — це патерн синхронізації, за якого два або більше потоків повинні дочекатися один одного в певній точці програми перед тим, як перейти до наступної фази.
+- WaitHandle.SignalAndWait(wh1, wh2) виконує дві дії АТОМАРНО (як єдину операцію на рівні операційної системи):
+  1) Сигналізує об'єкт wh1 (повідомляє партнера, що поточний потік дійшов до точки зустрічі);
+  2) Блокує поточний потік в очікуванні сигналу від wh2.
+- Атомарність гарантує відсутність стану гонки між моментом подачі сигналу і переходом у стан сну.
+
+5. Чому Mutex працює в 50-70 разів повільніше за lock (Monitor) та SemaphoreSlim?
+ВІДПОВІДЬ:
+- lock (Monitor) реалізований на рівні CLR у просторі користувача (user mode). При відсутності конкуренції захоплення об'єкта lock займає кілька процесорних інструкцій (Compare-And-Swap / CMPXCHG) без виклику системних переривань ядра OS.
+- SemaphoreSlim також оптимізований для простору користувача: він спершу використовує коротке спін-очікування (spinning), і лише при тривалому простої створює системний дескриптор.
+- Mutex та стандартний Semaphore(1, 1) є системними об'єктами ядра Windows (Kernel Objects). Будь-яка операція WaitOne() або ReleaseMutex() вимагає системного виклику (syscall), переходу процесора з Ring 3 (user mode) у Ring 0 (kernel mode) та повного збереження контексту регістрів. Цей накладний час (overhead) складає мікросекунди замість наносекунд, що при мільйоні ітерацій перетворюється на 5 секунд затримки замість 70 мілісекунд.

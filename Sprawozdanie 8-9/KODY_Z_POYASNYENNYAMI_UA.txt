@@ -1,0 +1,445 @@
+﻿================================================================================
+ПОЛІТЕХНІКА СВЕНТОКШИСЬКА (POLITECHNIKA ŚWIĘTOKRZYSKA)
+ФАКУЛЬТЕТ ЕЛЕКТРОТЕХНІКИ, АВТОМАТИКИ ТА ІНФОРМАТИКИ
+КАФЕДРА ІНФОРМАТИЧНИХ СИСТЕМ
+ПРЕДМЕТ: ПАРАЛЕЛЬНЕ ТА БАГАТОПОТОКОВЕ ПРОГРАМУВАННЯ (PROGRAMOWANIE WSPÓŁBIEŻNE)
+
+СПРАВОЗДАННЯ № 8-9: ЗААВАНСОВАНЕ TPL, КОНТИНУАЦІЇ, СКАСУВАННЯ ТА PLINQ
+АВТОР: Artem Hizhovskyi | ГРУПА: 3ID11B | ДАТА: 20.11.2026
+================================================================================
+
+РОЗДІЛ 1. ВИХІДНІ КОДИ ПРОГРАМ З ДЕТАЛЬНИМИ ПОРОЗРЯДНИМИ ПОЯСНЕННЯМИ (УКРАЇНСЬКОЮ МОВОЮ)
+
+--------------------------------------------------------------------------------
+1. ФАЙЛ: LabTask1\Punkt1.cs (Завдання 8.1-8.3: Ланцюги континуацій та ExecuteSynchronously)
+--------------------------------------------------------------------------------
+using System;
+using System.Diagnostics;
+using System.Threading.Tasks;
+
+namespace LabTask1
+{
+    class Punkt1
+    {
+        // Метод навантаження процесора обчисленнями
+        static void DoPointlessMess(int depth)
+        {
+            double x = 1.0;
+            for (int i = 0; i < 50; i++)
+            {
+                x = Math.Sin(x + depth);
+            }
+        }
+
+        static void Main(string[] args)
+        {
+            const int chainLength = 50000;
+            Console.WriteLine($"Badanie lancucha kontynuacji TPL ({chainLength} zadan)\n");
+
+            // --- ВАРІАНТ 1: Ланцюг із прапорцем TaskContinuationOptions.ExecuteSynchronously ---
+            // Прапорець змушує CLR виконувати наступне завдання континуації на ТОМУ САМОМУ потоці,
+            // який щойно завершив попереднє завдання, якщо воно вже виконалося.
+            // Це повністю усуває витрати на повернення потоку в пул, постановку в глобальну чергу
+            // та вибір нового потоку з ThreadPool.
+            Stopwatch sw = Stopwatch.StartNew();
+            Task current = Task.CompletedTask;
+            for (int i = 0; i < chainLength; i++)
+            {
+                int depth = i;
+                current = current.ContinueWith(t => DoPointlessMess(depth), TaskContinuationOptions.ExecuteSynchronously);
+            }
+            current.Wait();
+            sw.Stop();
+            long timeSync = sw.ElapsedMilliseconds;
+            Console.WriteLine($"1. ContinueWith + ExecuteSynchronously | Czas: {timeSync,5} ms");
+
+            // --- ВАРІАНТ 2: Стандартне планування континуацій через ThreadPool ---
+            // Кожна континуація ставиться в чергу ThreadPool як окремий WorkItem.
+            // Це спричиняє величезний накладний час диспетчеризації при 50 000 дрібних завдань.
+            sw.Restart();
+            current = Task.CompletedTask;
+            for (int i = 0; i < chainLength; i++)
+            {
+                int depth = i;
+                current = current.ContinueWith(t => DoPointlessMess(depth));
+            }
+            current.Wait();
+            sw.Stop();
+            long timeAsync = sw.ElapsedMilliseconds;
+            Console.WriteLine($"2. ContinueWith domyslne (ThreadPool)   | Czas: {timeAsync,5} ms");
+
+            double speedup = (double)timeAsync / Math.Max(1, timeSync);
+            Console.WriteLine($"\nPrzyspieszenie dzieki ExecuteSynchronously: {speedup:F2}x");
+        }
+    }
+}
+
+--------------------------------------------------------------------------------
+2. ФАЙЛ: FibonacciTask\Punkt2.cs (Завдання 8.4: Потокове обчислення чисел Фібоначчі на BigInteger)
+--------------------------------------------------------------------------------
+using System;
+using System.Diagnostics;
+using System.Numerics;
+using System.Threading.Tasks;
+
+namespace FibonacciTask
+{
+    class Punkt2
+    {
+        static void Main(string[] args)
+        {
+            const int n = 5000;
+            Console.WriteLine($"Potokowe obliczanie ciagu Fibonacciego do wyrazu {n}\n");
+
+            // Використання конвеєра TPL із типом довільної точності BigInteger та кортежами (a, b)
+            Stopwatch sw = Stopwatch.StartNew();
+            Task<(BigInteger a, BigInteger b)> pipeline = Task.FromResult((BigInteger.Zero, BigInteger.One));
+
+            for (int i = 2; i <= n; i++)
+            {
+                // Кожне наступне завдання бере попередній кортеж (prevA, prevB) і обчислює (prevB, prevA + prevB)
+                pipeline = pipeline.ContinueWith(prev =>
+                {
+                    var (prevA, prevB) = prev.Result;
+                    return (prevB, prevA + prevB);
+                }, TaskContinuationOptions.ExecuteSynchronously);
+            }
+
+            var result = pipeline.Result;
+            sw.Stop();
+
+            Console.WriteLine($"TPL Pipeline | F({n}) liczba cyfr: {result.b.ToString().Length} | Czas: {sw.ElapsedMilliseconds} ms");
+
+            // Порівняння з класичним ітеративним обчисленням
+            sw.Restart();
+            BigInteger a = 0;
+            BigInteger b = 1;
+            for (int i = 2; i <= n; i++)
+            {
+                BigInteger c = a + b;
+                a = b;
+                b = c;
+            }
+            sw.Stop();
+            Console.WriteLine($"Sekwencyjnie | F({n}) liczba cyfr: {b.ToString().Length} | Czas: {sw.ElapsedMilliseconds} ms");
+        }
+    }
+}
+
+--------------------------------------------------------------------------------
+3. ФАЙЛ: PrimesTask\Punkt3.cs (Завдання 8.5-8.6: Паралельне сито простих чисел та PrimesGenerator)
+--------------------------------------------------------------------------------
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
+using System.Threading.Tasks;
+
+namespace PrimesTask
+{
+    public static class PrimesGenerator
+    {
+        // Перевірка простоти числа
+        public static bool IsPrime(int number)
+        {
+            if (number < 2) return false;
+            if (number == 2) return true;
+            if (number % 2 == 0) return false;
+            int limit = (int)Math.Sqrt(number);
+            for (int i = 3; i <= limit; i += 2)
+            {
+                if (number % i == 0) return false;
+            }
+            return true;
+        }
+
+        // Пошук у заданому діапазоні
+        public static List<int> FindPrimesRange(int start, int end)
+        {
+            List<int> primes = new List<int>();
+            for (int i = start; i < end; i++)
+            {
+                if (IsPrime(i)) primes.Add(i);
+            }
+            return primes;
+        }
+
+        // Асинхронний метод із розбиттям на партиції за кількістю ядер процесора
+        public static async Task<List<int>> FindPrimesAsync(int start, int end, int partitions)
+        {
+            int rangeSize = (end - start) / partitions;
+            Task<List<int>>[] tasks = new Task<List<int>>[partitions];
+
+            for (int p = 0; p < partitions; p++)
+            {
+                int pStart = start + p * rangeSize;
+                int pEnd = (p == partitions - 1) ? end : pStart + rangeSize;
+                tasks[p] = Task.Run(() => FindPrimesRange(pStart, pEnd));
+            }
+
+            // Очікування завершення всіх партицій та злиття списків
+            List<int>[] results = await Task.WhenAll(tasks);
+            return results.SelectMany(r => r).ToList();
+        }
+    }
+
+    class Punkt3
+    {
+        static void Main(string[] args)
+        {
+            const int limit = 500000;
+            int cores = Environment.ProcessorCount;
+            Console.WriteLine($"Wyszukiwanie liczb pierwszych w zakresie 2..{limit} (Rdzenie CPU: {cores})\n");
+
+            // 1. Послідовний пошук
+            Stopwatch sw = Stopwatch.StartNew();
+            List<int> seqPrimes = PrimesGenerator.FindPrimesRange(2, limit);
+            sw.Stop();
+            Console.WriteLine($"1. Sekwencyjnie        | Znaleziono: {seqPrimes.Count,6} | Czas: {sw.ElapsedMilliseconds,5} ms");
+
+            // 2. TPL з ContinueWhenAll: запуск N завдань і злиття континуацією
+            sw.Restart();
+            int partSize = limit / cores;
+            Task<List<int>>[] tasks = new Task<List<int>>[cores];
+            for (int i = 0; i < cores; i++)
+            {
+                int start = 2 + i * partSize;
+                int end = (i == cores - 1) ? limit : start + partSize;
+                tasks[i] = Task.Factory.StartNew(() => PrimesGenerator.FindPrimesRange(start, end));
+            }
+
+            Task<List<int>> continuation = Task.Factory.ContinueWhenAll(tasks, completedTasks =>
+            {
+                List<int> combined = new List<int>();
+                foreach (var t in completedTasks)
+                {
+                    combined.AddRange(t.Result);
+                }
+                return combined;
+            });
+
+            List<int> tplPrimes = continuation.Result;
+            sw.Stop();
+            Console.WriteLine($"2. TPL ContinueWhenAll | Znaleziono: {tplPrimes.Count,6} | Czas: {sw.ElapsedMilliseconds,5} ms");
+
+            // 3. Асинхронний метод PrimesGenerator.FindPrimesAsync
+            sw.Restart();
+            List<int> asyncPrimes = PrimesGenerator.FindPrimesAsync(2, limit, cores).GetAwaiter().GetResult();
+            sw.Stop();
+            Console.WriteLine($"3. Async / WhenAll     | Znaleziono: {asyncPrimes.Count,6} | Czas: {sw.ElapsedMilliseconds,5} ms");
+        }
+    }
+}
+
+--------------------------------------------------------------------------------
+4. ФАЙЛ: TaskAdvanced\Punkt4.cs (Завдання 9.1-9.4: Рапортування postepu, скасування та розгалуження)
+--------------------------------------------------------------------------------
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace TaskAdvanced
+{
+    class Punkt4
+    {
+        // Асинхронний метод із підтримкою звітування прогресу (IProgress) та токена скасування (CancellationToken)
+        static async Task<int[]> CalculateSomethingAsync(int size, IProgress<(int, int)> progress, CancellationToken ct)
+        {
+            int[] data = new int[size];
+            Random rand = new Random();
+
+            for (int i = 0; i < size; i++)
+            {
+                // Перевірка запиту на скасування: викидає OperationCanceledException
+                ct.ThrowIfCancellationRequested();
+                data[i] = rand.Next(100);
+
+                if (i % (size / 10) == 0)
+                {
+                    // Звітування поточного стану прогресу
+                    progress?.Report((i, data[i]));
+                }
+
+                await Task.Delay(20, ct);
+            }
+
+            return data;
+        }
+
+        static void Main(string[] args)
+        {
+            Console.WriteLine("Zaawansowane mechanizmy TPL: Raportowanie, Anulowanie i Rozgalezienia\n");
+
+            // Обробник прогресу
+            var progress = new Progress<(int step, int val)>(p =>
+            {
+                Console.WriteLine($"[Raport postepu] Krok: {p.step,4} | Wygenerowano: {p.val}");
+            });
+
+            using (var cts = new CancellationTokenSource())
+            {
+                // Автоматичне скасування операції через 150 мс
+                cts.CancelAfter(150);
+
+                Task<int[]> task = CalculateSomethingAsync(50, progress, cts.Token);
+
+                // Розгалуження OnFaulted: спрацьовує ТІЛЬКИ у випадку помилки або скасування
+                Task onFault = task.ContinueWith(t =>
+                {
+                    Console.WriteLine("[Rozgalezienie OnFaulted] Operacja zostala anulowana lub zakonczona wyjatkiem.");
+                }, TaskContinuationOptions.OnlyOnFaulted);
+
+                // Розгалуження OnSuccess: спрацьовує ТІЛЬКИ при успішному завершенні
+                Task onSuccess = task.ContinueWith(t =>
+                {
+                    Console.WriteLine($"[Rozgalezienie OnSuccess] Obliczenia zakonczone sukcesem. Elementow: {t.Result.Length}");
+                }, TaskContinuationOptions.OnlyOnRanToCompletion);
+
+                try
+                {
+                    task.Wait();
+                }
+                catch (AggregateException ae)
+                {
+                    // Обробка винятків за допомогою ae.Flatten().Handle()
+                    ae.Flatten().Handle(ex =>
+                    {
+                        Console.WriteLine($"[Przechwycono wyjatek] {ex.GetType().Name}: {ex.Message}");
+                        return true;
+                    });
+                }
+
+                try
+                {
+                    Task.WaitAll(onFault, onSuccess);
+                }
+                catch (AggregateException)
+                {
+                    // У TPL гілка OnSuccess переходить у стан Canceled, коли батьківське завдання скасоване
+                    Console.WriteLine("[Informacja TPL] Pominiete rozgalezienie zostalo anulowane przez harmonogram.");
+                }
+            }
+
+            Console.WriteLine("\nZadanie Punkt 4 zakonczone sukcesem.");
+        }
+    }
+}
+
+--------------------------------------------------------------------------------
+5. ФАЙЛ: BenchmarkSum\Punkt5.cs (Завдання 9.5-9.8: Великий бенчмарк сумування 5 000 000 елементів)
+--------------------------------------------------------------------------------
+using System;
+using System.Diagnostics;
+using System.Linq;
+using System.Threading.Tasks;
+
+namespace BenchmarkSum
+{
+    class Punkt5
+    {
+        // Нелінійна математична функція обчислення
+        static double CalculatedValue(double x)
+        {
+            return Math.Sqrt(Math.Sin(x) * Math.Sin(x) + Math.Cos(x) * Math.Cos(x));
+        }
+
+        static void Main(string[] args)
+        {
+            const int arraySize = 5000000;
+            Console.WriteLine($"Wielki Benchmark Sumowania {arraySize} elementow\n");
+
+            double[] data = new double[arraySize];
+            for (int i = 0; i < arraySize; i++) data[i] = 1.0;
+
+            // 1. Послідовний цикл for
+            Stopwatch sw = Stopwatch.StartNew();
+            double seqSum = 0;
+            for (int i = 0; i < arraySize; i++)
+            {
+                seqSum += CalculatedValue(data[i]);
+            }
+            sw.Stop();
+            Console.WriteLine($"1. Sekwencyjna petla for      | Suma: {seqSum:F0} | Czas: {sw.ElapsedMilliseconds,5} ms");
+
+            // 2. Parallel.ForEach із глобальним блокуванням lock
+            // Демонстрація катастрофічного падіння швидкості через конкуренцію за lock (Lock Contention)
+            object locker = new object();
+            double parallelLockSum = 0;
+            sw.Restart();
+            Parallel.ForEach(data, item =>
+            {
+                double v = CalculatedValue(item);
+                lock (locker)
+                {
+                    parallelLockSum += v;
+                }
+            });
+            sw.Stop();
+            Console.WriteLine($"2. Parallel.ForEach z lock    | Suma: {parallelLockSum:F0} | Czas: {sw.ElapsedMilliseconds,5} ms");
+
+            // 3. PLINQ AsParallel().Sum()
+            // Паралельне LINQ автоматично ділить масив на чанки і виконує локальне сумування без блокувань
+            sw.Restart();
+            double plinqSum = data.AsParallel().Sum(x => CalculatedValue(x));
+            sw.Stop();
+            Console.WriteLine($"3. PLINQ AsParallel().Sum()   | Suma: {plinqSum:F0} | Czas: {sw.ElapsedMilliseconds,5} ms");
+
+            // 4. Дедикований TPL поділ на кількість ядер процесора
+            int cores = Environment.ProcessorCount;
+            int chunkSize = arraySize / cores;
+            Task<double>[] tasks = new Task<double>[cores];
+
+            sw.Restart();
+            for (int c = 0; c < cores; c++)
+            {
+                int start = c * chunkSize;
+                int end = (c == cores - 1) ? arraySize : start + chunkSize;
+                tasks[c] = Task.Run(() =>
+                {
+                    double localSum = 0;
+                    for (int i = start; i < end; i++)
+                    {
+                        localSum += CalculatedValue(data[i]);
+                    }
+                    return localSum;
+                });
+            }
+            Task.WaitAll(tasks);
+            double tplSum = tasks.Sum(t => t.Result);
+            sw.Stop();
+            Console.WriteLine($"4. Dedykowane partycje TPL    | Suma: {tplSum:F0} | Czas: {sw.ElapsedMilliseconds,5} ms");
+
+            Console.WriteLine("\nBenchmark zakonczony.");
+        }
+    }
+}
+
+
+================================================================================
+РОЗДІЛ 2. ШПАРГАЛКА ДЛЯ УСНОГО ЗАХИСТУ ПЕРЕД ВИКЛАДАЧЕМ
+================================================================================
+
+1. Як прапорець TaskContinuationOptions.ExecuteSynchronously впливає на продуктивність ланцюга континуацій?
+ВІДПОВІДЬ:
+- За замовчуванням кожна континуація (ContinueWith) ставиться в чергу пулу потоків ThreadPool. Для 50 000 операцій це означає 50 000 операцій додавання в чергу, перемикання контексту та очікування вивільнення потоку.
+- Прапорець ExecuteSynchronously вказує планувальнику TPL виконати код континуації на ТОМУ САМОМУ потоці, який щойно закінчив попереднє завдання (in-line execution), без повернення в чергу ThreadPool. Це прискорює виконання конвеєра в десятки разів.
+
+2. Чому Parallel.ForEach з lock працює у 6-10 разів ПОВІЛЬНІШЕ за звичайний послідовний цикл for?
+ВІДПОВІДЬ:
+- Це класичний антипатерн паралельного програмування під назвою "Lock Contention" (надвисока конкуренція за блокування) та "Cache Line Bouncing".
+- Коли всі ядра процесора одночасно намагаються захопити один і той самий об'єкт lock мільйони разів, процесорні кеші L1/L2 постійно інвалідуються шиною когерентності MESI. Потоки 95% часу проводять у спін-блокуванні або перемиканні контексту замість корисних обчислень.
+- Правильний підхід реалізований у PLINQ та TPL-партиціях: кожен потік накопичує локальну суму у власному регістрі, і лише в самому кінці виконується одна фінальна операція додавання.
+
+3. Як влаштований механізм кооперативного скасування (Cooperative Cancellation) у TPL?
+ВІДПОВІДЬ:
+- У .NET скасування є кооперативним (добровільним): потік не можна примусово "вбити" зовні (метод Thread.Abort() заборонений).
+- Використовується пара: CancellationTokenSource (керує станом скасування) та CancellationToken (передається в асинхронні методи).
+- Завдання періодично викликає token.ThrowIfCancellationRequested(). Якщо скасування було ініційовано (наприклад, через CancelAfter), викидається виняток OperationCanceledException. TPL перехоплює цей виняток і переводить завдання в статус TaskStatus.Canceled.
+
+4. Що відбувається з континуаціями OnlyOnRanToCompletion та OnlyOnFaulted при скасуванні завдання?
+ВІДПОВІДЬ:
+- TPL дозволяє будувати умовні дерева континуацій:
+  - Гілка OnlyOnFaulted виконується виключно тоді, коли батьківське завдання завершилося з помилкою або було скасовано.
+  - Гілка OnlyOnRanToCompletion повинна виконуватися лише при успішному завершенні.
+- Якщо батьківське завдання скасоване, планувальник автоматично переводить завдання OnlyOnRanToCompletion у стан Canceled без виклику його тіла.
+- При виклику Task.WaitAll() на такому завданні буде згенеровано AggregateException(TaskCanceledException), тому його необхідно обробляти у відповідному блоці try-catch.

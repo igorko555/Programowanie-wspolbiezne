@@ -1,0 +1,407 @@
+﻿================================================================================
+ПОЛІТЕХНІКА СВЕНТОКШИСЬКА (POLITECHNIKA ŚWIĘTOKRZYSKA)
+ФАКУЛЬТЕТ ЕЛЕКТРОТЕХНІКИ, АВТОМАТИКИ ТА ІНФОРМАТИКИ
+КАФЕДРА ІНФОРМАТИЧНИХ СИСТЕМ
+ПРЕДМЕТ: ПАРАЛЕЛЬНЕ ТА БАГАТОПОТОКОВЕ ПРОГРАМУВАННЯ (PROGRAMOWANIE WSPÓŁBIEŻNE)
+
+СПРАВОЗДАННЯ № 7: БІБЛІОТЕКА ЗАВДАНЬ TPL ТА АНІМАЦІЯ SNOW
+АВТОР: Artem Hizhovskyi | ГРУПА: 3ID11B | ДАТА: 06.11.2026
+================================================================================
+
+РОЗДІЛ 1. ВИХІДНІ КОДИ ПРОГРАМ З ДЕТАЛЬНИМИ ПОРОЗРЯДНИМИ ПОЯСНЕННЯМИ (УКРАЇНСЬКОЮ МОВОЮ)
+
+--------------------------------------------------------------------------------
+1. ФАЙЛ: FirstTasks\Punkt1.cs (Завдання 1: Створення першого завдання Task і метод Wait)
+--------------------------------------------------------------------------------
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace FirstTasks
+{
+    class Punkt1
+    {
+        static void Main(string[] args)
+        {
+            // Створення екземпляра завдання Task через конструктор із передачею лямбда-виразу (Action).
+            // Завдання t1 створюється в стані Created і ще не виконується.
+            Task t1 = new Task(() =>
+            {
+                for (int i = 0; i < 10; i++)
+                {
+                    Console.Write($"{i} ");
+                    // Імітація роботи завдання з паузою 100 мс
+                    Thread.Sleep(100);
+                }
+            });
+
+            // Явний запуск завдання на виконання. TPL ставить завдання в чергу планувальника пулу потоків (ThreadPool).
+            t1.Start();
+
+            // КРИТИЧНО: Метод Wait() блокує головний потік до повного завершення завдання t1.
+            // Оскільки потоки ThreadPool за замовчуванням є фоновими (IsBackground = true),
+            // без виклику t1.Wait() головний потік миттєво закінчив би метод Main, і процес CLR
+            // завершився б до того, як завдання t1 встигло б вивести бодай одне число!
+            t1.Wait();
+
+            Console.WriteLine("\nZadanie 1 zakonczone.");
+        }
+    }
+}
+
+--------------------------------------------------------------------------------
+2. ФАЙЛ: FirstTasks\Punkt2.cs (Завдання 2: Завдання з іменованого методу)
+--------------------------------------------------------------------------------
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace FirstTasks
+{
+    class Punkt2
+    {
+        // Окремий іменований статичний метод, що відповідає делегату Action (void без параметрів)
+        static void task2()
+        {
+            for (int i = 0; i < 10; i++)
+            {
+                Console.Write($"[{i}] ");
+                Thread.Sleep(100);
+            }
+        }
+
+        static void Main(string[] args)
+        {
+            // Завдання t1 створене через анонімний лямбда-вираз
+            Task t1 = new Task(() =>
+            {
+                for (int i = 0; i < 10; i++)
+                {
+                    Console.Write($"{i} ");
+                    Thread.Sleep(100);
+                }
+            });
+
+            // Завдання t2 створене з передачею посилання на іменований метод task2
+            Task t2 = new Task(task2);
+
+            // Одночасний запуск обох завдань
+            t1.Start();
+            t2.Start();
+
+            // Очікування завершення обох завдань по черзі
+            t1.Wait();
+            t2.Wait();
+
+            Console.WriteLine("\nZadanie 2 zakonczone.");
+        }
+    }
+}
+
+--------------------------------------------------------------------------------
+3. ФАЙЛ: FirstTasks\Punkt3.cs (Завдання 3: Передача цілочисельного параметра стану)
+--------------------------------------------------------------------------------
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace FirstTasks
+{
+    class Punkt3
+    {
+        // Метод приймає універсальний параметр типу object (делегат Action<object>)
+        static void task3(object o)
+        {
+            // Розпакування (unboxing / casting) параметра до цілого числа
+            int limit = (int)o;
+            for (int i = 0; i < limit; i++)
+            {
+                Console.Write($"({i}) ");
+                Thread.Sleep(80);
+            }
+        }
+
+        static void Main(string[] args)
+        {
+            // Конструктор Task(Action<object>, object state) дозволяє передати вхідний аргумент без замикання (closure)
+            Task t3 = new Task(task3, 15);
+            t3.Start();
+            t3.Wait();
+
+            Console.WriteLine("\nZadanie 3 zakonczone.");
+        }
+    }
+}
+
+--------------------------------------------------------------------------------
+4. ФАЙЛ: FirstTasks\Punkt4.cs (Завдання 4: Передача параметрів через кортежі ValueTuple)
+--------------------------------------------------------------------------------
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace FirstTasks
+{
+    class Punkt4
+    {
+        static void task4(object arg)
+        {
+            // Розпакування параметра типу object у строго типізований іменований кортеж (int, string)
+            var tuple = ((int id, string name))arg;
+            for (int i = 0; i < 8; i++)
+            {
+                Console.WriteLine($"<{tuple.name} ID={tuple.id} iter={i}>");
+                Thread.Sleep(100);
+            }
+        }
+
+        static void Main(string[] args)
+        {
+            // Передача літералу кортежу у конструктор завдання
+            Task t4 = new Task(task4, (1, "ZadanieAlfa"));
+            Task t4b = new Task(task4, (2, "ZadanieBeta"));
+
+            t4.Start();
+            t4b.Start();
+
+            t4.Wait();
+            t4b.Wait();
+
+            Console.WriteLine("\nZadanie 4 zakonczone.");
+        }
+    }
+}
+
+--------------------------------------------------------------------------------
+5. ФАЙЛ: FirstTasks\Punkt5.cs (Завдання 5: Передача власного об'єкта класу MyParam)
+--------------------------------------------------------------------------------
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace FirstTasks
+{
+    // Спеціалізований клас для інкапсуляції вхідних параметрів завдання
+    public class MyParam
+    {
+        public string Name { get; set; }
+        public int Id { get; set; }
+    }
+
+    class Punkt5
+    {
+        static void task5(object o)
+        {
+            // Приведення типу до класу MyParam
+            MyParam p = (MyParam)o;
+            for (int i = 0; i < 5; i++)
+            {
+                Console.WriteLine($"[Klasa {p.Name} (ID: {p.Id}) krok {i}]");
+                Thread.Sleep(100);
+            }
+        }
+
+        static void Main(string[] args)
+        {
+            MyParam p = new MyParam { Name = "ParametrTestowy", Id = 100 };
+            Task t5 = new Task(task5, p);
+            t5.Start();
+            t5.Wait();
+
+            Console.WriteLine("\nZadanie 5 zakonczone.");
+        }
+    }
+}
+
+--------------------------------------------------------------------------------
+6. ФАЙЛ: FirstTasks\Punkt6.cs (Завдання 6: Динамічний список завдань і Task.Factory)
+--------------------------------------------------------------------------------
+using System;
+using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace FirstTasks
+{
+    public class MyParam
+    {
+        public string Name { get; set; }
+        public int Id { get; set; }
+    }
+
+    class Punkt6
+    {
+        static void task5(object o)
+        {
+            MyParam p = (MyParam)o;
+            for (int i = 0; i < 5; i++)
+            {
+                Console.WriteLine($"[Lista Zadanie: {p.Name} ID: {p.Id} iteracja: {i}]");
+                Thread.Sleep(60);
+            }
+        }
+
+        static void Main(string[] args)
+        {
+            // Динамічний список завдань
+            List<Task> taskList = new List<Task>();
+
+            for (int i = 1; i <= 5; i++)
+            {
+                MyParam p = new MyParam { Name = $"Task_{i}", Id = i * 10 };
+                // Task.Factory.StartNew створює та ОДРАЗУ запускає завдання в пулі потоків
+                taskList.Add(Task.Factory.StartNew(task5, p));
+            }
+
+            // Task.WaitAll блокує виконання до повного завершення ВСІХ завдань у переданому масиві
+            Task.WaitAll(taskList.ToArray());
+
+            Console.WriteLine("\nZadanie 6 zakonczone pomyslnie.");
+        }
+    }
+}
+
+--------------------------------------------------------------------------------
+7. ФАЙЛ: Snow\Punkt7.cs (Завдання 7-10: Проєкт Snow - 50 сніжинок, пул потоків і Random.Shared)
+--------------------------------------------------------------------------------
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace Snow
+{
+    public class StarParameter
+    {
+        public int Iterations { get; set; }
+        public ConsoleColor Color { get; set; }
+        public int InitialX { get; set; }
+    }
+
+    class Punkt7
+    {
+        // Об'єкт синхронізації консолі. Всі методи Console (SetCursorPosition, ForegroundColor, Write)
+        // звертаються до єдиного глобального буфера вікна консолі. Без блокування виникає каша на екрані.
+        static readonly object consoleLock = new object();
+
+        static void Star(object o)
+        {
+            StarParameter p = (StarParameter)o;
+            int x = p.InitialX;
+            int y = 0;
+
+            for (int i = 0; i < p.Iterations; i++)
+            {
+                int width;
+                int height;
+
+                lock (consoleLock)
+                {
+                    // Динамічне зчитування поточної ширини та висоти вікна (реакція на зміну розміру вікна)
+                    width = Console.WindowWidth;
+                    height = Console.WindowHeight;
+
+                    if (x >= width) x = width - 1;
+                    if (y >= height) y = 0;
+
+                    // Малювання сніжинки в поточних координатах
+                    Console.SetCursorPosition(x, y);
+                    Console.ForegroundColor = p.Color;
+                    Console.Write('*');
+                }
+
+                // Використання потокобезпечного генератора Random.Shared (введено в .NET 6+)
+                Thread.Sleep(Random.Shared.Next(40, 100));
+
+                lock (consoleLock)
+                {
+                    // Стирання старого положення сніжинки
+                    if (x < Console.WindowWidth && y < Console.WindowHeight)
+                    {
+                        Console.SetCursorPosition(x, y);
+                        Console.Write(' ');
+                    }
+                }
+
+                y++;
+                if (y >= height)
+                {
+                    y = 0;
+                    x = Random.Shared.Next(0, width);
+                }
+
+                // Невеликий випадковий дрейф вліво/вправо (-1, 0, +1)
+                x += Random.Shared.Next(-1, 2);
+                if (x < 0) x = 0;
+                if (x >= width) x = width - 1;
+            }
+        }
+
+        static void Main(string[] args)
+        {
+            // ОПТИМІЗАЦІЯ ПУЛУ: За замовчуванням ThreadPool починає з кількості потоків, рівної числу ядер CPU,
+            // і додає нові потоки повільно (по 1-2 в секунду). Виклик SetMinThreads(64, 64) миттєво підготовлює
+            // пул для одночасного запуску 50+ завдань без затримок (запобігає thread pool starvation).
+            ThreadPool.SetMinThreads(64, 64);
+            
+            Console.Clear();
+            Console.CursorVisible = false;
+
+            int starCount = 30;
+            Task[] tasks = new Task[starCount];
+            ConsoleColor[] colors = { ConsoleColor.White, ConsoleColor.Cyan, ConsoleColor.Gray };
+
+            for (int i = 0; i < starCount; i++)
+            {
+                StarParameter param = new StarParameter
+                {
+                    Iterations = 60,
+                    Color = colors[i % colors.Length],
+                    InitialX = Random.Shared.Next(0, Math.Max(20, Console.WindowWidth))
+                };
+
+                // Запуск завдання сніжинки
+                tasks[i] = Task.Factory.StartNew(Star, param);
+                Thread.Sleep(Random.Shared.Next(10, 50));
+            }
+
+            Task.WaitAll(tasks);
+
+            lock (consoleLock)
+            {
+                Console.ResetColor();
+                Console.CursorVisible = true;
+                Console.SetCursorPosition(0, 0);
+                Console.WriteLine("Animacja Snow zakonczona sukcesem.");
+            }
+        }
+    }
+}
+
+
+================================================================================
+РОЗДІЛ 2. ШПАРГАЛКА ДЛЯ УСНОГО ЗАХИСТУ ПЕРЕД ВИКЛАДАЧЕМ
+================================================================================
+
+1. Що таке Task у бібліотеці TPL і чим він відрізняється від Thread?
+ВІДПОВІДЬ:
+- Thread — це пряма обгортка над системним потоком ядра операційної системи (1:1 OS Thread). Створення кожного нового Thread вимагає виділення близько 1 МБ стеку в оперативній пам'яті та значного накладного часу ядра на створення структур дескриптора потоку.
+- Task — це високорівнева абстракція асинхронної операції ("обіцянка" виконання роботи — Promise). Завдання Task не володіє власним потоком ОС, а планується на спільній пулі потоків CLR (ThreadPool).
+- Переваги Task: надзвичайно малий розмір об'єкта в купі (кілька сотень байт), ефективне повторне використання існуючих потоків без виділення нового стеку, зручні механізми композиції (ContinueWith, WaitAll, WhenAll, async/await).
+
+2. Чому виникає ефект "голодування пулу потоків" (Thread Pool Starvation) і як його вирішує ThreadPool.SetMinThreads?
+ВІДПОВІДЬ:
+- Алгоритм Hill-Climbing у ThreadPool спочатку тримає мінімальну кількість робочих потоків (зазвичай рівну кількості логічних ядер процесора, наприклад 8 або 12).
+- Якщо раптово поставити в чергу 50 довгих блокуючих завдань (наприклад, сніжинки, які виконують Thread.Sleep), перші 8-12 завдань займуть усі доступні потоки.
+- Решта завдань зависнуть у черзі. Планувальник пулу потоків додає нові потоки дуже обережно (лише один новий потік кожні 500 мс). Через це анімація починається з кількох сніжинок, і решта підключаються поступово протягом 20-30 секунд.
+- Метод ThreadPool.SetMinThreads(64, 64) повідомляє середовищу CLR, що перші 64 потоки повинні створюватися миттєво без жодних штучних затримок.
+
+3. Чому для виводу в консоль обов'язково потрібен lock(consoleLock)?
+ВІДПОВІДЬ:
+- Клас Console інкапсулює спільний буфер символів та курсор консолі Windows.
+- Операція переміщення курсора Console.SetCursorPosition(x, y), встановлення кольору Console.ForegroundColor та запису символу Console.Write('*') складається з кількох окремих операцій.
+- Якщо кілька потоків роблять це одночасно без блокування, виникає стан гонки: потік А встановив курсор у точку (10, 5), операційна система перемкнула контекст на потік Б, який встановив курсор у точку (40, 20), і потік А надрукував свою зірочку в координатах потоку Б. Блокування lock(consoleLock) гарантує атомарність малювання сніжинки.
+
+4. Чому Random.Shared є безпечним у порівнянні з new Random()?
+ВІДПОВІДЬ:
+- Статична властивість Random.Shared (введена в .NET 6) повертає екземпляр генератора псевдовипадкових чисел, реалізований на базі ThreadLocal<Random>.
+- Кожен потік звертається до свого власного екземпляра генератора, завдяки чому відсутня будь-яка конкуренція за пам'ять, стан генератора не пошкоджується нулями, і не потрібні додаткові блокування.
