@@ -1,6 +1,6 @@
 # Programowanie Współbieżne
 
-**Autor:** Artem Hizhovskyi  
+**Autor:** Ihor Namachynskyi  
 **Grupa:** 3ID11B  
 **Uczelnia:** Politechnika Świętokrzyska  
 **Wydział:** Elektrotechniki, Automatyki i Informatyki  
