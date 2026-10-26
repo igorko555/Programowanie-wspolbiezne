@@ -7,6 +7,6 @@
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="Punkt1.cs" />
+    <Compile Include="Punkt2.cs" />
   </ItemGroup>
 </Project>

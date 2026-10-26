@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading;
 
@@ -8,50 +9,47 @@ namespace ProducerConsumerQ
     {
         static void Main(string[] args)
         {
-            var cq = new Queue<int>();
-            List<Thread> threads = new List<Thread>();
+            ConcurrentQueue<int> cq = new ConcurrentQueue<int>();
+            SemaphoreSlim sem = new SemaphoreSlim(0);
+            List<Thread> watki = new List<Thread>();
             Random rand = new Random();
-            //the producer puts 100 elements into the collection at random intervals of up to 500ms
-            var producer = new Thread(() =>
+
+            var producent = new Thread(() =>
             {
                 for (int l = 0; l < 100; l++)
                 {
                     cq.Enqueue(l);
-                    Console.WriteLine($"I'm putting  {l}");
-                    Thread.Sleep(rand.Next(500));
+                    Console.WriteLine($"Wkladam {l}");
+                    sem.Release();
+                    Thread.Sleep(rand.Next(10));
                 }
-
             });
-            producer.Start();
+            producent.Start();
 
             for (int i = 0; i < 10; i++)
             {
-                var thread = new Thread(() =>
+                var watek = new Thread(() =>
                 {
-
                     for (int l = 0; l < 10; l++)
                     {
-                        try
+                        sem.Wait();
+                        if (cq.TryDequeue(out int result2))
                         {
-                            int result2 = cq.Dequeue();
-                            Console.WriteLine($"I'm getting {result2} ");
+                            Console.WriteLine($"Odbieram {result2}");
                         }
-                        catch (Exception ex)
-                        {
-                            Console.WriteLine("Exception for pick-up: ", ex.Message);
-                        }
-
-                        Thread.Sleep(rand.Next(5000));
+                        Thread.Sleep(rand.Next(20));
                     }
                 });
-                threads.Add(thread);
-                thread.Start();
+                watki.Add(watek);
+                watek.Start();
             }
-            foreach (var thread in threads)
+
+            foreach (var watek in watki)
             {
-                thread.Join();
+                watek.Join();
             }
-            producer.Join(); 
+            producent.Join();
+            Console.WriteLine("Wszystkie elementy zostaly poprawnie odebrane.");
         }
     }
 }

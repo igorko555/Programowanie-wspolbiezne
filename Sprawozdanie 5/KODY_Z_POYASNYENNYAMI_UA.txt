@@ -5,13 +5,74 @@
 ПРЕДМЕТ: ПАРАЛЕЛЬНЕ ТА БАГАТОПОТОКОВЕ ПРОГРАМУВАННЯ (PROGRAMOWANIE WSPÓŁBIEŻNE)
 
 СПРАВОЗДАННЯ № 5: БЕЗПЕКА ПОТОКІВ У КОЛЕКЦІЯХ ТА БУФЕРИ ПРОДУЦЕНТ-КОНСУМЕНТ
-ТЕМА: Kolekcje współbieżne, synchronizacja lock oraz wzorzec producent-konsument
+ТЕМА: Kolekcje współbieżne, synchronizacja lock oraz wzorzec producent-konsument (Zadania 2 - 8)
 АВТОР: Artem Hizhovskyi | ГРУПА: 3ID11B | ДАТА: 30.10.2026
 ================================================================================
 
 РОЗДІЛ 1. ВИХІДНІ КОДИ ПРОГРАМ З ДЕТАЛЬНИМИ ПОРОЗРЯДНИМИ ПОЯСНЕННЯМИ (УКРАЇНСЬКОЮ МОВОЮ)
 
-1. ФАЙЛ: UnsafeCollection\Punkt1.cs (Завдання 5.2-5.4: List<T> vs lock vs ConcurrentBag)
+--------------------------------------------------------------------------------
+1. ФАЙЛ: UnsafeCollection\Punkt2.cs (Завдання 2: Na początek, błędy — List<int> без синхронізації)
+--------------------------------------------------------------------------------
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Threading;
+
+namespace UnsafeCollection
+{
+    class Punkt2
+    {
+        static void Main(string[] args)
+        {
+            // Створюємо список потоків для подальшої синхронізації через Join()
+            List<Thread> watki = new List<Thread>();
+
+            // Звичайна колекція List<T> НЕ є потокобезпечною. Вона інкапсулює внутрішній масив T[].
+            List<int> liczby = new List<int>(1000000);
+            Random rand = new Random();
+
+            // Вимірювання часу виконання за допомогою Stopwatch
+            Stopwatch sw = Stopwatch.StartNew();
+
+            // Запускаємо 100 потоків, кожен з яких намагається додати 10 000 елементів
+            for (int i = 0; i < 100; i++)
+            {
+                var watek = new Thread(() =>
+                {
+                    for (int l = 0; l < 10000; l++)
+                    {
+                        try
+                        {
+                            // Одночасний виклик Add() без блокувань призводить до перезапису однакових індексів
+                            // та виходу за межі масиву під час його динамічного розширення
+                            liczby.Add(rand.Next());
+                        }
+                        catch
+                        {
+                            // Перехоплення винятків пошкодження внутрішньої структури списку
+                        }
+                    }
+                });
+                watki.Add(watek);
+                watek.Start();
+            }
+
+            // Очікуємо завершення роботи всіх 100 потоків
+            foreach (var watek in watki)
+            {
+                watek.Join();
+            }
+
+            sw.Stop();
+            Console.WriteLine($"Czas wykonania: {sw.ElapsedMilliseconds} ms");
+            Console.WriteLine($"Liczba elementow w liscie zwyklej: {liczby.Count} (oczekiwano: 1000000)");
+        }
+    }
+}
+
+--------------------------------------------------------------------------------
+2. ФАЙЛ: UnsafeCollection\Punkt3.cs (Завдання 3: ConcurrentBag — потокобезпечний мішок)
 --------------------------------------------------------------------------------
 using System;
 using System.Collections.Concurrent;
@@ -21,114 +82,98 @@ using System.Threading;
 
 namespace UnsafeCollection
 {
-    class Punkt1
+    class Punkt3
     {
-        // 100 потоків додають по 10 000 елементів = загалом 1 000 000 чисел
-        static readonly int threadCount = 100;
-        static readonly int itemsPerThread = 10000;
-        static readonly object locker = new object();
-
         static void Main(string[] args)
         {
-            Console.WriteLine($"Wielowatkowy test kolekcji (watki: {threadCount}, elementy/watek: {itemsPerThread})\n");
+            List<Thread> watki = new List<Thread>();
 
-            // --- ВАРІАНТ 1: Звичайна List<int> БЕЗ синхронізації ---
-            // List<T> реалізована поверх звичайного масиву int[]. Операція Add() включає перевірку розміру,
-            // збільшення ємності та запис за індексом _size++.
-            // При одночасному доступі без блокувань виникає пошкодження внутрішньої структури (race condition),
-            // викидаються ArgumentException/IndexOutOfRangeException, а кінцева кількість елементів становить
-            // лише кілька тисяч замість 1 000 000!
-            List<Thread> threads = new List<Thread>();
-            List<int> unsafeList = new List<int>();
+            // ConcurrentBag<T> реалізує внутрішню структуру локальних черг для кожного потоку (ThreadLocalList).
+            // Додавання елементів виконується майже без блокувань за алгоритмом Work Stealing.
+            ConcurrentBag<int> liczby = new ConcurrentBag<int>();
             Stopwatch sw = Stopwatch.StartNew();
 
-            for (int i = 0; i < threadCount; i++)
+            for (int i = 0; i < 100; i++)
             {
-                var w = new Thread(() =>
+                var watek = new Thread(() =>
                 {
-                    Random rand = new Random(Thread.CurrentThread.ManagedThreadId);
-                    for (int j = 0; j < itemsPerThread; j++)
+                    Random rand = new Random();
+                    for (int l = 0; l < 10000; l++)
                     {
-                        try
-                        {
-                            unsafeList.Add(rand.Next());
-                        }
-                        catch
-                        {
-                            // Ігноруємо винятки переповнення/пошкодження внутрішніх масивів
-                        }
+                        // Потокобезпечне додавання без необхідності ручного lock
+                        liczby.Add(rand.Next());
                     }
                 });
-                threads.Add(w);
-                w.Start();
+                watki.Add(watek);
+                watek.Start();
             }
 
-            foreach (var w in threads) w.Join();
-            sw.Stop();
-            Console.WriteLine($"1. List<int> bez synchronizacji  | Elementow: {unsafeList.Count,8} (oczekiwano 1000000) | Czas: {sw.ElapsedMilliseconds,5} ms");
-
-            // --- ВАРІАНТ 2: List<int> із блокуванням lock (Monitor) ---
-            // Захист операції Add() спільним об'єктом locker.
-            // Результат завжди 100% коректний (рівно 1 000 000 елементів), але виникає накладний час
-            // на очікування та блокування потоків (~150 ms).
-            threads.Clear();
-            List<int> lockedList = new List<int>();
-            sw.Restart();
-
-            for (int i = 0; i < threadCount; i++)
+            foreach (var watek in watki)
             {
-                var w = new Thread(() =>
-                {
-                    Random rand = new Random(Thread.CurrentThread.ManagedThreadId);
-                    for (int j = 0; j < itemsPerThread; j++)
-                    {
-                        int val = rand.Next();
-                        lock (locker)
-                        {
-                            lockedList.Add(val);
-                        }
-                    }
-                });
-                threads.Add(w);
-                w.Start();
+                watek.Join();
             }
 
-            foreach (var w in threads) w.Join();
             sw.Stop();
-            Console.WriteLine($"2. List<int> z blokada lock      | Elementow: {lockedList.Count,8} (oczekiwano 1000000) | Czas: {sw.ElapsedMilliseconds,5} ms");
-
-            // --- ВАРІАНТ 3: Спеціалізована потокобезпечна колекція ConcurrentBag<int> ---
-            // ConcurrentBag реалізує алгоритм Work-Stealing і виділяє окремий локальний список для кожного потоку (ThreadLocal).
-            // Додавання елементів виконується взагалі без глобальних блокувань (lock-free), тому швидкість максимальна (~25 ms),
-            // а результат бездоганно точний (рівно 1 000 000 елементів).
-            threads.Clear();
-            ConcurrentBag<int> concurrentBag = new ConcurrentBag<int>();
-            sw.Restart();
-
-            for (int i = 0; i < threadCount; i++)
-            {
-                var w = new Thread(() =>
-                {
-                    Random rand = new Random(Thread.CurrentThread.ManagedThreadId);
-                    for (int j = 0; j < itemsPerThread; j++)
-                    {
-                        concurrentBag.Add(rand.Next());
-                    }
-                });
-                threads.Add(w);
-                w.Start();
-            }
-
-            foreach (var w in threads) w.Join();
-            sw.Stop();
-            Console.WriteLine($"3. ConcurrentBag<int> (lock-free)| Elementow: {concurrentBag.Count,8} (oczekiwano 1000000) | Czas: {sw.ElapsedMilliseconds,5} ms");
-            Console.WriteLine("\nTest Punkt 1 zakonczony.");
+            Console.WriteLine($"Czas wykonania (ConcurrentBag): {sw.ElapsedMilliseconds} ms");
+            Console.WriteLine($"Liczba elementow w ConcurrentBag: {liczby.Count} (oczekiwano: 1000000)");
         }
     }
 }
 
 --------------------------------------------------------------------------------
-2. ФАЙЛ: UniqueCollection\Punkt2.cs (Завдання 5.5-5.6: Стан гонки TOCTOU та ConcurrentDictionary)
+3. ФАЙЛ: UnsafeCollection\Punkt4.cs (Завдання 4: Synchronizacja za pomocą lock)
+--------------------------------------------------------------------------------
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Threading;
+
+namespace UnsafeCollection
+{
+    class Punkt4
+    {
+        // Об'єкт синхронізації для створення секції взаємного виключення (mutual exclusion)
+        static readonly object locker = new object();
+
+        static void Main(string[] args)
+        {
+            List<Thread> watki = new List<Thread>();
+            List<int> liczby = new List<int>(1000000);
+            Stopwatch sw = Stopwatch.StartNew();
+
+            for (int i = 0; i < 100; i++)
+            {
+                var watek = new Thread(() =>
+                {
+                    Random rand = new Random();
+                    for (int l = 0; l < 10000; l++)
+                    {
+                        int val = rand.Next();
+                        // lock гарантує, що лише один потік у певний момент часу виконує операцію Add()
+                        lock (locker)
+                        {
+                            liczby.Add(val);
+                        }
+                    }
+                });
+                watki.Add(watek);
+                watek.Start();
+            }
+
+            foreach (var watek in watki)
+            {
+                watek.Join();
+            }
+
+            sw.Stop();
+            Console.WriteLine($"Czas wykonania (List + lock): {sw.ElapsedMilliseconds} ms");
+            Console.WriteLine($"Liczba elementow w liscie z lock: {liczby.Count} (oczekiwano: 1000000)");
+        }
+    }
+}
+
+--------------------------------------------------------------------------------
+4. ФАЙЛ: UniqueCollection\Punkt5.cs (Завдання 5: Unikalna kolekcja z lock oraz Extensions.cs)
 --------------------------------------------------------------------------------
 using System;
 using System.Collections.Concurrent;
@@ -139,117 +184,119 @@ using System.Threading;
 
 namespace UniqueCollection
 {
-    class Punkt2
+    class Punkt5
     {
-        static readonly int threadCount = 100;
-        static readonly int itemsPerThread = 100;
         static readonly object locker = new object();
 
         static void Main(string[] args)
         {
-            Console.WriteLine($"Weryfikacja unikalnosci 10000 liczb (100 watkow x 100 elementow z zakresu 0..10000)\n");
-
-            // --- ВАРІАНТ 1: ConcurrentBag із наївною перевіркою Any() ---
-            // Класична помилка TOCTOU (Time-Of-Check to Time-Of-Use):
-            // Метод bag.Any() потокобезпечний, і метод bag.Add() потокобезпечний.
-            // Проте МІЖ перевіркою (Check) та додаванням (Act) інший потік встигає додати те саме число!
-            // Як наслідок, утворюються дублікати, і тест IsUnique() повертає False!
-            ConcurrentBag<int> bagUnsafe = new ConcurrentBag<int>();
-            List<Thread> threads = new List<Thread>();
+            List<Thread> watki = new List<Thread>();
+            ConcurrentBag<int> liczby = new ConcurrentBag<int>();
             Stopwatch sw = Stopwatch.StartNew();
 
-            for (int i = 0; i < threadCount; i++)
+            for (int i = 0; i < 100; i++)
             {
-                var w = new Thread(() =>
+                var watek = new Thread(() =>
                 {
-                    Random rand = new Random(Thread.CurrentThread.ManagedThreadId);
-                    for (int j = 0; j < itemsPerThread; j++)
+                    Random rand = new Random();
+                    for (int l = 0; l < 100; l++)
                     {
-                        int number = rand.Next(10001);
-                        while (bagUnsafe.Any(x => x == number))
-                        {
-                            number = rand.Next(10001);
-                        }
-                        bagUnsafe.Add(number);
-                    }
-                });
-                threads.Add(w);
-                w.Start();
-            }
+                        int liczba = rand.Next(10001);
 
-            foreach (var t in threads) t.Join();
-            sw.Stop();
-            Console.WriteLine($"1. ConcurrentBag (Any + Add)     | Unikalne: {bagUnsafe.IsUnique(),-5} | Czas: {sw.ElapsedMilliseconds,5} ms | Elementow: {bagUnsafe.Count}");
-
-            // --- ВАРІАНТ 2: ConcurrentBag із захистом блоком lock ---
-            // Блокування lock(locker) охоплює як перевірку Any(), так і саме додавання Add().
-            // Це усуває гонку, і результат IsUnique() стає True, але через серіалізацію час зростає (~5400 ms).
-            ConcurrentBag<int> bagLocked = new ConcurrentBag<int>();
-            threads.Clear();
-            sw.Restart();
-
-            for (int i = 0; i < threadCount; i++)
-            {
-                var w = new Thread(() =>
-                {
-                    Random rand = new Random(Thread.CurrentThread.ManagedThreadId);
-                    for (int j = 0; j < itemsPerThread; j++)
-                    {
+                        // Усунення стану гонки TOCTOU (Time-of-Check to Time-of-Use):
+                        // Перевірка Any() та додавання Add() поміщені в неподільну секцію lock
                         lock (locker)
                         {
-                            int number = rand.Next(10001);
-                            while (bagLocked.Any(x => x == number))
+                            while (liczby.Any(x => x == liczba))
                             {
-                                number = rand.Next(10001);
+                                liczba = rand.Next(10001);
                             }
-                            bagLocked.Add(number);
+                            liczby.Add(liczba);
                         }
                     }
                 });
-                threads.Add(w);
-                w.Start();
+                watki.Add(watek);
+                watek.Start();
             }
 
-            foreach (var t in threads) t.Join();
-            sw.Stop();
-            Console.WriteLine($"2. ConcurrentBag z ryglem lock   | Unikalne: {bagLocked.IsUnique(),-5} | Czas: {sw.ElapsedMilliseconds,5} ms | Elementow: {bagLocked.Count}");
-
-            // --- ВАРІАНТ 3: ConcurrentDictionary з атомарним методом TryAdd ---
-            // Метод TryAdd виконує перевірку наявності ключа та його додавання в хеш-таблицю як ЄДИНУ АТОМАРНУ операцію!
-            // Не потрібен жоден lock, результат на 100% унікальний (True), а час виконання становить усього ~60 ms (у 90 разів швидше за lock!).
-            ConcurrentDictionary<int, byte> dict = new ConcurrentDictionary<int, byte>();
-            threads.Clear();
-            sw.Restart();
-
-            for (int i = 0; i < threadCount; i++)
+            foreach (var watek in watki)
             {
-                var w = new Thread(() =>
-                {
-                    Random rand = new Random(Thread.CurrentThread.ManagedThreadId);
-                    for (int j = 0; j < itemsPerThread; j++)
-                    {
-                        int number = rand.Next(10001);
-                        while (!dict.TryAdd(number, 0))
-                        {
-                            number = rand.Next(10001);
-                        }
-                    }
-                });
-                threads.Add(w);
-                w.Start();
+                watek.Join();
             }
 
-            foreach (var t in threads) t.Join();
             sw.Stop();
-            bool dictUnique = dict.Keys.Distinct().Count() == dict.Count;
-            Console.WriteLine($"3. ConcurrentDictionary (TryAdd) | Unikalne: {dictUnique,-5} | Czas: {sw.ElapsedMilliseconds,5} ms | Elementow: {dict.Count}");
-            Console.WriteLine("\nTest Punkt 2 zakonczony.");
+            Console.WriteLine($"Uplynelo {sw.ElapsedMilliseconds} ms");
+            Console.WriteLine($"Liczba elementow: {liczby.Count}");
+
+            // Перевірка розширювальним методом IsUnique()
+            if (liczby.IsUnique())
+            {
+                Console.WriteLine("wszystkie liczby sa unikalne");
+            }
+            else
+            {
+                Console.WriteLine("Nie wszystkie liczby sa unikalne");
+            }
         }
     }
 }
 
 --------------------------------------------------------------------------------
-3. ФАЙЛ: ProducerConsumerQ\Punkt3.cs (Завдання 5.7: ConcurrentQueue та SemaphoreSlim)
+5. ФАЙЛ: UniqueCollection\Punkt6.cs (Завдання 6: ConcurrentDictionary z TryAdd)
+--------------------------------------------------------------------------------
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Threading;
+
+namespace UniqueCollection
+{
+    class Punkt6
+    {
+        static void Main(string[] args)
+        {
+            List<Thread> watki = new List<Thread>();
+
+            // ConcurrentDictionary гарантує унікальність ключів на рівні хеш-таблиці
+            // за допомогою атомарного методу TryAdd() без потреби глобального lock
+            ConcurrentDictionary<int, byte> dict = new ConcurrentDictionary<int, byte>();
+            Stopwatch sw = Stopwatch.StartNew();
+
+            for (int i = 0; i < 100; i++)
+            {
+                var watek = new Thread(() =>
+                {
+                    Random rand = new Random();
+                    for (int l = 0; l < 100; l++)
+                    {
+                        int liczba = rand.Next(100000);
+                        // Якщо число вже існує в таблиці, TryAdd повертає false, і ми генеруємо нове
+                        while (!dict.TryAdd(liczba, 0))
+                        {
+                            liczba = rand.Next(100000);
+                        }
+                    }
+                });
+                watki.Add(watek);
+                watek.Start();
+            }
+
+            foreach (var watek in watki)
+            {
+                watek.Join();
+            }
+
+            sw.Stop();
+            Console.WriteLine($"Uplynelo {sw.ElapsedMilliseconds} ms");
+            Console.WriteLine($"Liczba unikalnych elementow w ConcurrentDictionary: {dict.Count} (oczekiwano: 10000)");
+            Console.WriteLine("Wszystkie elementy w slowniku sa unikalne z definicji klucza.");
+        }
+    }
+}
+
+--------------------------------------------------------------------------------
+6. ФАЙЛ: ProducerConsumerQ\Punkt7.cs (Завдання 7: ConcurrentQueue z SemaphoreSlim)
 --------------------------------------------------------------------------------
 using System;
 using System.Collections.Concurrent;
@@ -258,65 +305,63 @@ using System.Threading;
 
 namespace ProducerConsumerQ
 {
-    class Punkt3
+    class Punkt7
     {
         static void Main(string[] args)
         {
-            Console.WriteLine("Kolejka wspolbiezna ConcurrentQueue sterowana SemaphoreSlim\n");
+            ConcurrentQueue<int> cq = new ConcurrentQueue<int>();
 
-            // Потокобезпечна черга FIFO
-            ConcurrentQueue<int> queue = new ConcurrentQueue<int>();
-            
-            // Семафор сигналізації наявності елементів.
-            // Початковий рахунок = 0 (черга спочатку порожня, споживачі сплять).
-            SemaphoreSlim availableItems = new SemaphoreSlim(0);
-            
-            List<Thread> consumers = new List<Thread>();
+            // SemaphoreSlim(0) інкапсулює кількість доступних для читання елементів.
+            // Якщо черга порожня, лічильник = 0, і споживачі переходять у стан блокування
+            SemaphoreSlim sem = new SemaphoreSlim(0);
+            List<Thread> watki = new List<Thread>();
             Random rand = new Random();
 
-            // Потік-виробник
-            var producer = new Thread(() =>
+            var producent = new Thread(() =>
             {
-                for (int l = 0; l < 50; l++)
+                for (int l = 0; l < 100; l++)
                 {
-                    queue.Enqueue(l);
-                    Console.WriteLine($"[Producent] Wstawiono: {l}");
-                    // Збільшуємо лічильник семафора, пробуджуючи одного з очікуючих споживачів
-                    availableItems.Release();
-                    Thread.Sleep(rand.Next(10, 50));
+                    cq.Enqueue(l);
+                    Console.WriteLine($"Wkladam {l}");
+                    // Збільшуємо лічильник семафора, щоб розбудити одного очікуючого споживача
+                    sem.Release();
+                    Thread.Sleep(rand.Next(10));
                 }
             });
-            producer.Start();
+            producent.Start();
 
-            // 5 потоків-споживачів (кожен забирає по 10 елементів)
-            for (int i = 0; i < 5; i++)
+            // 10 споживачів, кожен зчитує рівно по 10 елементів (разом 100)
+            for (int i = 0; i < 10; i++)
             {
-                var consumer = new Thread(() =>
+                var watek = new Thread(() =>
                 {
                     for (int l = 0; l < 10; l++)
                     {
-                        // Очікування дозволу від семафора. Жодного холостого завантаження процесора (busy waiting)!
-                        availableItems.Wait();
-                        if (queue.TryDequeue(out int item))
+                        // Очікуємо сигналу від виробника (без марного навантаження CPU)
+                        sem.Wait();
+                        if (cq.TryDequeue(out int result2))
                         {
-                            Console.WriteLine($"[Konsument {Thread.CurrentThread.ManagedThreadId}] Pobrano element: {item}");
+                            Console.WriteLine($"Odbieram {result2}");
                         }
-                        Thread.Sleep(rand.Next(30, 80));
+                        Thread.Sleep(rand.Next(20));
                     }
                 });
-                consumers.Add(consumer);
-                consumer.Start();
+                watki.Add(watek);
+                watek.Start();
             }
 
-            foreach (var c in consumers) c.Join();
-            producer.Join();
-            Console.WriteLine("\nTest Punkt 3 zakonczony pomyslnie.");
+            foreach (var watek in watki)
+            {
+                watek.Join();
+            }
+            producent.Join();
+            Console.WriteLine("Wszystkie elementy zostaly poprawnie odebrane.");
         }
     }
 }
 
 --------------------------------------------------------------------------------
-4. ФАЙЛ: BlockingCollection\Punkt4.cs (Завдання 5.8: Обмежений блокуючий буфер BlockingCollection)
+7. ФАЙЛ: BlockingCollection\Punkt8.cs (Завдання 8: Producent konsument na BlockingCollection)
 --------------------------------------------------------------------------------
 using System;
 using System.Collections.Concurrent;
@@ -325,68 +370,66 @@ using System.Threading;
 
 namespace BlockingCollectionDemo
 {
-    class Punkt4
+    class Punkt8
     {
         static void Main(string[] args)
         {
-            Console.WriteLine("Ograniczony bufor blokujacy BlockingCollection (pojemnosc: 10)\n");
+            // Обмежений буфер ємністю 10 елементів.
+            // Якщо буфер заповнений, метод Add() автоматично блокує виробника!
+            BlockingCollection<int> buffer = new BlockingCollection<int>(10);
+            List<Thread> watki = new List<Thread>();
 
-            // Створення колекції з фіксованою ємністю 10 елементів (bounded buffer)
-            BlockingCollection<int> buffer = new BlockingCollection<int>(boundedCapacity: 10);
-            List<Thread> consumers = new List<Thread>();
-
-            // Потік-виробник
-            var producer = new Thread(() =>
+            var producent = new Thread(() =>
             {
-                for (int i = 1; i <= 30; i++)
+                for (int l = 0; l < 100; l++)
                 {
-                    Console.WriteLine($"[Producent] Proba dodania {i} (w buforze: {buffer.Count}/10)...");
-                    // Метод Add() автоматично блокує потік виробника, якщо в буфері вже є 10 елементів!
-                    buffer.Add(i);
-                    Console.WriteLine($"[Producent] Sukces: dodano {i}");
+                    buffer.Add(l);
+                    Console.WriteLine($"Producent wstawia: {l}");
                     Thread.Sleep(50);
                 }
-                // Повідомляємо споживачам, що нових даних більше не буде
+                // Сигналізуємо, що додавання завершено
                 buffer.CompleteAdding();
-                Console.WriteLine("[Producent] Zakonczono dodawanie (CompleteAdding).");
             });
+            producent.Start();
 
-            producer.Start();
+            // За вимогою інструкції: затримка 5 секунд перед стартом споживачів
+            Thread.Sleep(5000);
 
-            // Затримка старту споживачів на 1 секунду демонструє, як буфер заповнюється до 10 і виробник чекає
-            Thread.Sleep(1000);
-
-            // 3 потоки-споживачі
-            for (int c = 0; c < 3; c++)
+            for (int i = 0; i < 10; i++)
             {
-                var consumer = new Thread(() =>
+                int id = i;
+                var watek = new Thread(() =>
                 {
-                    try
+                    Random rand = new Random();
+                    for (int l = 0; l < 10; l++)
                     {
-                        // GetConsumingEnumerable() блокує споживача, коли буфер порожній,
-                        // і автоматично завершує цикл foreach, коли викликано CompleteAdding() і буфер вичерпано.
-                        foreach (var item in buffer.GetConsumingEnumerable())
+                        try
                         {
-                            Console.WriteLine($"[Konsument {Thread.CurrentThread.ManagedThreadId}] Pobrano {item} (pozostalo: {buffer.Count})");
-                            Thread.Sleep(150);
+                            // Take() автоматично блокує потік, якщо буфер порожній
+                            int item = buffer.Take();
+                            Console.WriteLine($"Konsument [{id}] pobral: {item}");
                         }
-                    }
-                    catch (InvalidOperationException)
-                    {
+                        catch (InvalidOperationException)
+                        {
+                            // Буфер вичерпано і CompleteAdding викликано
+                            break;
+                        }
+                        Thread.Sleep(rand.Next(500));
                     }
                 });
-                consumers.Add(consumer);
-                consumer.Start();
+                watki.Add(watek);
+                watek.Start();
             }
 
-            producer.Join();
-            foreach (var c in consumers) c.Join();
-            Console.WriteLine("\nTest Punkt 4 zakonczony pomyslnie.");
+            foreach (var watek in watki)
+            {
+                watek.Join();
+            }
+            producent.Join();
+            Console.WriteLine("Praca bufora zakonczona.");
         }
     }
 }
-
---------------------------------------------------------------------------------
 
 ================================================================================
 РОЗДІЛ 2. ШПАРГАЛКА ДЛЯ УСНОГО ЗАХИСТУ ПЕРЕД ВИКЛАДАЧЕМ

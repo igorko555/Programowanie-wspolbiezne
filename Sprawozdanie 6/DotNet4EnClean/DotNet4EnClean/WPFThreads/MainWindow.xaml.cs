@@ -18,9 +18,6 @@ using System.Windows.Shapes;
 
 namespace WPFThreads
 {
-    /// <summary>
-    /// Interaction logic for MainWindow.xaml
-    /// </summary>
     public partial class MainWindow : Window
     {
         public MainWindow()
@@ -32,21 +29,11 @@ namespace WPFThreads
             producerDelaySlider.ValueChanged += ProducerDelaySlider_ValueChanged;
         }
 
-        /// <summary>
-        /// Set the producer delay on slider value change
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
         private void ProducerDelaySlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
             producerDelay = (int)e.NewValue;
         }
 
-        /// <summary>
-        /// Set the consumer delay on slider value change
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
         private void ConsumerDelaySlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
             consumerDelay = (int)e.NewValue;
@@ -63,11 +50,6 @@ namespace WPFThreads
         private int consumerDelay = 5000;
         private bool running = false;
 
-        /// <summary>
-        /// Event handler on click button
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
         private void Button_Click(object sender, RoutedEventArgs e)
         {
             Button b = (Button)sender;
@@ -86,9 +68,6 @@ namespace WPFThreads
             
         }
 
-        /// <summary>
-        /// Initiate and start threads
-        /// </summary>
         private void Start()
         {
             Trace.WriteLine("Start");
@@ -104,22 +83,15 @@ namespace WPFThreads
             }
         }
 
-        /// <summary>
-        /// Finish threads
-        /// </summary>
         private void Stop()
         {
-            cts.Cancel(); //signal cancellation
-            consumers.ForEach(c => c.Join()); //wait for all consumers
-            producer.Join(); //wait for producer
-            consumers.Clear(); //clear array of consummers
+            cts.Cancel();
+            consumers.ForEach(c => c.Join());
+            producer.Join();
+            consumers.Clear();
             cts.Dispose();
         }
 
-        /// <summary>
-        /// Consummer thread
-        /// </summary>
-        /// <param name="o"></param>
         private void Consumer(object o)
         {
             CancellationToken ct = (CancellationToken)o;
@@ -130,11 +102,13 @@ namespace WPFThreads
             {
                 try
                 {
-                    ct.WaitHandle.WaitOne(TimeSpan.FromMilliseconds(rand.Next(0, consumerDelay))); //it's like a Sleep with cancellation token
+                    ct.WaitHandle.WaitOne(TimeSpan.FromMilliseconds(rand.Next(0, consumerDelay)));
                     product = buffer.Take(ct);
-                    //TODO: update collectionAmountLabel with buffer.Count in thread safe way
-                    Trace.WriteLine($"Consumer get {product}"); //In WPF there no console, so we use Trace to put information on output
-                    //TODO: append the same info "Consumer get..." to the consumerOutput
+                    Dispatcher.Invoke(() => {
+                        collectionAmountLabel.Content = buffer.Count.ToString();
+                        consumerOutput.AppendText("Consumer get " + product + "\r");
+                        consumerOutput.ScrollToEnd();
+                    });
                 }
                 catch (OperationCanceledException ocex)
                 {
@@ -145,10 +119,6 @@ namespace WPFThreads
         }
 
 
-        /// <summary>
-        /// Producer thread
-        /// </summary>
-        /// <param name="o"></param>
         private void Producer(object o)
         {
             CancellationToken ct = (CancellationToken)o;
@@ -160,12 +130,14 @@ namespace WPFThreads
                 try
                 {
                     
-                    ct.WaitHandle.WaitOne(TimeSpan.FromMilliseconds(rand.Next(0, producerDelay))); //it's like a Sleep with cancellation token
+                    ct.WaitHandle.WaitOne(TimeSpan.FromMilliseconds(rand.Next(0, producerDelay)));
                     product = number++;
                     buffer.Add(product, ct);
-                    //TODO: update collectionAmountLabel with buffer.Count in thread safe way
-                    Trace.WriteLine($"Producer put {product}");
-                    //TODO: append the same info "Producer put..." to the producerOutput
+                    Dispatcher.Invoke(() => {
+                        collectionAmountLabel.Content = buffer.Count.ToString();
+                        producerOutput.AppendText("Producer put " + product + "\r");
+                        producerOutput.ScrollToEnd();
+                    });
                 }
                 catch (OperationCanceledException ocex)
                 {

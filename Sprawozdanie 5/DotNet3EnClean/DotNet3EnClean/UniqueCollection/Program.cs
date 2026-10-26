@@ -9,45 +9,52 @@ namespace UniqueCollection
 {
     class Program
     {
+        static readonly object locker = new object();
+
         static void Main(string[] args)
         {
-            List<Thread> threads = new List<Thread>();
-            ConcurrentBag<int> numbers = new ConcurrentBag<int>();
-            Stopwatch sw = new Stopwatch();
-            sw.Start();
-            Random rand = new Random();
+            List<Thread> watki = new List<Thread>();
+            ConcurrentBag<int> liczby = new ConcurrentBag<int>();
+            Stopwatch sw = Stopwatch.StartNew();
+
             for (int i = 0; i < 100; i++)
             {
                 var watek = new Thread(() =>
                 {
-
+                    Random rand = new Random();
                     for (int l = 0; l < 100; l++)
                     {
-                        int number = rand.Next(10001);
-                        while (numbers.Any(x => x == number))
+                        int liczba = rand.Next(10001);
+                        lock (locker)
                         {
-                            number = rand.Next(10001);
-                        };
-                        numbers.Add(number);
+                            while (liczby.Any(x => x == liczba))
+                            {
+                                liczba = rand.Next(10001);
+                            }
+                            liczby.Add(liczba);
+                        }
                     }
                 });
-                threads.Add(watek);
+                watki.Add(watek);
                 watek.Start();
             }
-            foreach (var thread in threads)
+
+            foreach (var watek in watki)
             {
-                thread.Join();
+                watek.Join();
             }
+
             sw.Stop();
-
-            Console.WriteLine($"Elapsed miliseconds {sw.ElapsedMilliseconds} ms");
-            if (numbers.IsUnique()) //using extension method for CB
-                Console.WriteLine("All numbers are unique");
+            Console.WriteLine($"Uplynelo {sw.ElapsedMilliseconds} ms");
+            Console.WriteLine($"Liczba elementow: {liczby.Count}");
+            if (liczby.IsUnique())
+            {
+                Console.WriteLine("wszystkie liczby sa unikalne");
+            }
             else
-                Console.WriteLine("Not all numbers are unique");
-
-
-            Console.ReadLine();
+            {
+                Console.WriteLine("Nie wszystkie liczby sa unikalne");
+            }
         }
     }
 }

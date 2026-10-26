@@ -1,32 +1,56 @@
 ﻿using System;
-using System.Linq;
-
-
+using System.Threading;
 
 namespace Barriers
 {
     class Program
     {
         const int howmanyspecimens = 16;
-        const int howmanyiterations = 2000;
+        const int howmanyiterations = 100;
         static double[] specimens = new double[howmanyspecimens];
-        static double[] evaluetedValues = new double[howmanyspecimens];
+        static double[] evaluatedValues = new double[howmanyspecimens];
+
+        static Barrier evaluationBarrier = new Barrier(howmanyspecimens + 1);
+        static Barrier generationBarrier = new Barrier(howmanyspecimens + 1);
+
         static void Main(string[] args)
         {
-            Console.WindowWidth = 150;
             GAHelper.FillFirstGeneration(specimens);
 
-            for (int i = 0; i < howmanyiterations; i++)
+            Thread[] workers = new Thread[howmanyspecimens];
+            for (int i = 0; i < howmanyspecimens; i++)
             {
-                evaluetedValues = GAHelper.EvaluateValues(specimens); //evaluate generation 
-                //specimens.ToList().ForEach(s => GAHelper.Display(s));
-              //  Console.Write($"Max: {evaluetedValues.Max()} Avg: {evaluetedValues.Average()}   ");
-                GAHelper.PrintGenerationWithValues(specimens, evaluetedValues);
-                GAHelper.AppendToFile("results.csv", evaluetedValues);
-                specimens = GAHelper.NewGeneration(specimens, evaluetedValues);
-                GAHelper.Mutation(specimens);
-              
+                int id = i;
+                workers[i] = new Thread(() =>
+                {
+                    for (int iter = 0; iter < howmanyiterations; iter++)
+                    {
+                        evaluatedValues[id] = GAHelper.Evaluate(specimens[id]);
+                        evaluationBarrier.SignalAndWait();
+                        generationBarrier.SignalAndWait();
+                    }
+                });
+                workers[i].Start();
             }
+
+            for (int iter = 0; iter < howmanyiterations; iter++)
+            {
+                evaluationBarrier.SignalAndWait();
+                if (iter % 20 == 0 || iter == howmanyiterations - 1)
+                {
+                    Console.WriteLine($"Pokolenie {iter,3} | Najlepszy: {evaluatedValues[0]:F4}");
+                }
+                specimens = GAHelper.NewGeneration(specimens, evaluatedValues);
+                GAHelper.Mutation(specimens);
+                generationBarrier.SignalAndWait();
+            }
+
+            for (int i = 0; i < howmanyspecimens; i++)
+            {
+                workers[i].Join();
+            }
+
+            Console.WriteLine("\nEwolucja zakonczona sukcesem za pomoca System.Threading.Barrier.");
         }
     }
 }

@@ -1,35 +1,46 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
+using System.Diagnostics;
 using System.Threading;
-using System.Threading.Tasks;
 
 namespace UnsafeCollection
 {
     class Program
     {
+        static readonly object locker = new object();
+
         static void Main(string[] args)
         {
-            List<Thread> threads = new List<Thread>();
-            List<int> numbers = new List<int>(1000000);
-            Random rand = new Random();
+            List<Thread> watki = new List<Thread>();
+            List<int> liczby = new List<int>(1000000);
+            Stopwatch sw = Stopwatch.StartNew();
+
             for (int i = 0; i < 100; i++)
             {
                 var watek = new Thread(() =>
                 {
+                    Random rand = new Random();
                     for (int l = 0; l < 10000; l++)
-                        numbers.Add(rand.Next());
+                    {
+                        int val = rand.Next();
+                        lock (locker)
+                        {
+                            liczby.Add(val);
+                        }
+                    }
                 });
-                threads.Add(watek);
+                watki.Add(watek);
                 watek.Start();
             }
-            foreach (var watek in threads)
+
+            foreach (var watek in watki)
             {
                 watek.Join();
             }
-            Console.WriteLine($"The number of items in a regular list: {numbers.Count}");
-            Console.ReadLine();
+
+            sw.Stop();
+            Console.WriteLine($"Czas wykonania (List + lock): {sw.ElapsedMilliseconds} ms");
+            Console.WriteLine($"Liczba elementow w liscie z lock: {liczby.Count} (oczekiwano: 1000000)");
         }
     }
 }

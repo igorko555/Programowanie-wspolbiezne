@@ -7,7 +7,6 @@
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="Punkt2.cs" />
-    <Compile Include="Extensions.cs" />
+    <Compile Include="Punkt8.cs" />
   </ItemGroup>
 </Project>
