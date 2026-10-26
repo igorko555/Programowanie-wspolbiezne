@@ -7,7 +7,7 @@
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="Punkt5.cs" />
+    <Compile Include="Punkt2.cs" />
     <Compile Include="GAHelper.cs" />
   </ItemGroup>
 </Project>

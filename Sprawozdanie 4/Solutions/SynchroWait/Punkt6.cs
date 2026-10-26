@@ -10,7 +10,7 @@ namespace SynchroWait
         static readonly int liczbaWatkow = 10;
         static WaitHandle[] handles = new WaitHandle[liczbaWatkow];
         static List<Thread> watki = new List<Thread>();
-        static Random rand = new Random();
+        static readonly Random rand = Random.Shared;
 
         static void Main(string[] args)
         {

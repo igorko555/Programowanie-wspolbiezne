@@ -6,59 +6,65 @@ namespace ProducentKonsument
 {
     class Punkt2
     {
+        const int tryb = 2;
         static int licznik = 0;
-        static readonly int liczbaWatkow = 10;
-        static readonly int liczbaIteracji = 10;
+        static readonly Random wspolnyRandom = new Random();
 
         static void Main(string[] args)
         {
-            List<Thread> watkiKonsument = new List<Thread>();
+            List<Thread> konsumenci = new List<Thread>();
 
-            for (int i = 0; i < liczbaWatkow; i++)
+            for (int i = 0; i < 10; i++)
             {
-                var konsument = new Thread(() =>
+                Thread konsument = new Thread(() =>
                 {
-                    Random rand = new Random(Thread.CurrentThread.ManagedThreadId);
-
-                    for (int j = 0; j < liczbaIteracji; j++)
+                    Random rand = tryb switch
                     {
-                        var czasUspienia = rand.Next(100, 300);
-                        Thread.Sleep(czasUspienia);
-                        Console.WriteLine($"Konsument [{Thread.CurrentThread.ManagedThreadId}] odczytal licznik: {licznik} (sleep: {czasUspienia}ms)");
+                        1 => new Random(),
+                        2 => new Random(Thread.CurrentThread.ManagedThreadId),
+                        _ => wspolnyRandom
+                    };
+
+                    for (int j = 0; j < 10; j++)
+                    {
+                        int opoznienie = rand.Next(100, 300);
+                        Thread.Sleep(opoznienie);
+
+                        Console.WriteLine(
+                            $"Watek {Thread.CurrentThread.ManagedThreadId}: " +
+                            $"licznik = {licznik}, sleep = {opoznienie} ms");
                     }
                 });
-                watkiKonsument.Add(konsument);
+
+                konsumenci.Add(konsument);
                 konsument.Start();
             }
 
-            Thread watekProducent = new Thread(() =>
+            Thread producent = new Thread(() =>
             {
-                Random randPiszacy = new Random(Thread.CurrentThread.ManagedThreadId);
                 try
                 {
                     while (true)
                     {
-                        Thread.Sleep(randPiszacy.Next(50, 150));
+                        Thread.Sleep(100);
                         Interlocked.Increment(ref licznik);
                     }
                 }
                 catch (ThreadInterruptedException)
                 {
-                    Console.WriteLine("\nWatek piszacy zostal zakonczony.");
+                    Console.WriteLine("Producent zakonczyl prace.");
                 }
             });
 
-            watekProducent.Start();
+            producent.Start();
 
-            foreach (var watek in watkiKonsument)
-            {
-                watek.Join();
-            }
+            foreach (Thread konsument in konsumenci)
+                konsument.Join();
 
-            watekProducent.Interrupt();
-            watekProducent.Join();
+            producent.Interrupt();
+            producent.Join();
 
-            Console.WriteLine($"Koniec programu. Ostateczna wartosc licznika: {licznik}");
+            Console.WriteLine("Koniec programu.");
         }
     }
 }

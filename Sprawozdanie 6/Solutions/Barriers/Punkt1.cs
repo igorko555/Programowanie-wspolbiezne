@@ -3,7 +3,7 @@ using System.Threading;
 
 namespace Barriers
 {
-    class Punkt5
+    class Punkt1
     {
         const int howmanyspecimens = 16;
         const int howmanyiterations = 100;

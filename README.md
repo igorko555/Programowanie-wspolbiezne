@@ -33,11 +33,16 @@ Każdy moduł laboratoryjny zawiera:
 - **Punkt 6 (SynchroWait):** Sygnalizacja i koordynacja wątków z wykorzystaniem `ManualResetEvent`.
 - **Punkt 7 (MuteksyIReszta):** Kompleksowy benchmark wydajności mechanizmów synchronizacji (`lock` vs `Monitor` vs `SemaphoreSlim` vs `Mutex`).
 
-### [Sprawozdanie 5-6](./Sprawozdanie%205-6/) — Bezpieczne Kolekcje, Bariery i Wątki w UI
-- **Punkt 1–2:** Kolekcje bezpieczne i niebezpieczne wątkowo (`List<T>` vs `ConcurrentBag<T>`, `ConcurrentDictionary<TKey, TValue>`).
-- **Punkt 3–4:** Bufor producent-konsument z użyciem `BlockingCollection<T>`.
-- **Punkt 5–6:** Bariera synchronizacyjna faz (`Barrier` oraz własna implementacja na `Monitor.Wait` / `PulseAll`).
-- **WPFThreads:** Wielowątkowość w aplikacjach okienkowych WPF, unikanie blokowania UI i bezpieczna delegacja przez `Dispatcher.Invoke`.
+### [Sprawozdanie 5](./Sprawozdanie%205/) — Bezpieczeństwo Wątkowe w Kolekcjach i Buforowanie Producent-Konsument
+- **Punkt 1 (UnsafeCollection):** Wyścigi wątkowe w standardowych kolekcjach (`List<T>` vs `lock` vs `ConcurrentBag<T>`).
+- **Punkt 2 (UniqueCollection):** Gwarantowanie unikalności kluczy: wyścig TOCTOU w `ConcurrentBag` vs ochrona `lock` vs atomowe metody `ConcurrentDictionary<TKey, TValue>`.
+- **Punkt 3 (ProducerConsumerQ):** Bufor kolejkowy: `ConcurrentQueue<T>` z pętlą ponowień `TryDequeue` vs synchronizacja semaforem `SemaphoreSlim`.
+- **Punkt 4 (BlockingCollection):** Ograniczony bufor FIFO z metodami blokującymi `Add` i `Take` oraz sygnalizacją `CompleteAdding`.
+
+### [Sprawozdanie 6](./Sprawozdanie%206/) — Bariery Synchronizacyjne oraz Wielowątkowość w GUI (WPF)
+- **Punkt 1 (Barriers):** Równoległa ewaluacja populacji algorytmu genetycznego (GA) z podwójną barierą fazową `System.Threading.Barrier` (`SignalAndWait`) dla 16 wątków.
+- **Punkt 2 (Monitory):** Własna implementacja bariery synchronizacyjnej (`MonitorBarrier`) oparta na `Monitor.Wait` i `Monitor.PulseAll` z atomowym licznikiem wątków i fazami.
+- **Punkt 3 (WPFThreads):** Wielowątkowość w aplikacjach WPF: ochrona bufora `BlockingCollection`, dynamiczna regulacja prędkości suwakami i bezpieczna aktualizacja kontrolek UI przez `Dispatcher.Invoke`.
 
 ### [Sprawozdanie 7](./Sprawozdanie%207/) — Task Parallel Library (TPL) i Animacje Wielowątkowe
 - **Punkt 1–6:** Podstawy `Task`, `Task.Run`, `Task.WaitAll`, `Task.WhenAll`, obsługa wyjątków `AggregateException`.

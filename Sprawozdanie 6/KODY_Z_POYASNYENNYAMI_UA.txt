@@ -1,0 +1,258 @@
+﻿================================================================================
+ПОЛІТЕХНІКА СВЕНТОКШИСЬКА (POLITECHNIKA ŚWIĘTOKRZYSKA)
+ФАКУЛЬТЕТ ЕЛЕКТРОТЕХНІКИ, АВТОМАТИКИ ТА ІНФОРМАТИКИ
+КАФЕДРА ІНФОРМАТИЧНИХ СИСТЕМ
+ПРЕДМЕТ: ПАРАЛЕЛЬНЕ ТА БАГАТОПОТОКОВЕ ПРОГРАМУВАННЯ (PROGRAMOWANIE WSPÓŁBIEŻNE)
+
+СПРАВОЗДАННЯ № 6: БАР'ЄРИ СИНХРОНІЗАЦІЇ ТА БАГАТОПОТОКОВИЙ GUI WPF
+ТЕМА: Bariery synchronizacyjne faz (Barrier, Monitor) oraz wielowątkowość w aplikacjach okienkowych WPF
+АВТОР: Artem Hizhovskyi | ГРУПА: 3ID11B | ДАТА: 06.11.2026
+================================================================================
+
+РОЗДІЛ 1. ВИХІДНІ КОДИ ПРОГРАМ З ДЕТАЛЬНИМИ ПОРОЗРЯДНИМИ ПОЯСНЕННЯМИ (УКРАЇНСЬКОЮ МОВОЮ)
+
+1. ФАЙЛ: Barriers\Punkt1.cs (Завдання 6.1: Двоетапна бар'єрна синхронізація в генетичному алгоритмі)
+--------------------------------------------------------------------------------
+using System;
+using System.Threading;
+
+namespace Barriers
+{
+    class Punkt1
+    {
+        const int howmanyspecimens = 16;
+        const int howmanyiterations = 100;
+        static double[] specimens = new double[howmanyspecimens];
+        static double[] evaluatedValues = new double[howmanyspecimens];
+
+        // ДВІ БАР'ЄРИ СИНХРОНІЗАЦІЇ (16 робочих потоків + 1 головний потік = 17 учасників)
+        // Бар'єр 1: Фіксація закінчення фази оцінки особинок
+        static Barrier evaluationBarrier = new Barrier(howmanyspecimens + 1);
+        
+        // Бар'єр 2: Фіксація готовності нового покоління (селекція/схрещування/мутація завершені)
+        static Barrier generationBarrier = new Barrier(howmanyspecimens + 1);
+
+        static void Main(string[] args)
+        {
+            GAHelper.FillFirstGeneration(specimens);
+
+            // Створюємо 16 потоків лише один раз перед входом у цикл еволюції
+            Thread[] workers = new Thread[howmanyspecimens];
+            for (int i = 0; i < howmanyspecimens; i++)
+            {
+                int id = i;
+                workers[i] = new Thread(() =>
+                {
+                    for (int iter = 0; iter < howmanyiterations; iter++)
+                    {
+                        // 1. Оцінка власної одинки
+                        evaluatedValues[id] = GAHelper.Evaluate(specimens[id]);
+                        
+                        // Доповідь на бар'єрі оцінки: потік чекає, поки всі інші 15 оцінять своїх особинок
+                        evaluationBarrier.SignalAndWait();
+                        
+                        // Очікування на другому бар'єрі: головний потік мусить згенерувати нову популяцію
+                        generationBarrier.SignalAndWait();
+                    }
+                });
+                workers[i].Start();
+            }
+
+            // Цикл поколінь головного потоку
+            for (int iter = 0; iter < howmanyiterations; iter++)
+            {
+                // Очікування, поки всі 16 потоків закінчать оцінку
+                evaluationBarrier.SignalAndWait();
+                
+                if (iter % 20 == 0 || iter == howmanyiterations - 1)
+                {
+                    Console.WriteLine($"Pokolenie {iter,3} | Najlepszy: {evaluatedValues[0]:F4}");
+                }
+                
+                // Створення нового покоління: селекція, кросинговер, мутація
+                specimens = GAHelper.NewGeneration(specimens, evaluatedValues);
+                GAHelper.Mutation(specimens);
+                
+                // Сигнал робочим потокам: нове покоління готове, можна розпочинати наступний цикл
+                generationBarrier.SignalAndWait();
+            }
+
+            for (int i = 0; i < howmanyspecimens; i++)
+            {
+                workers[i].Join();
+            }
+
+            Console.WriteLine("\nEwolucja zakonczona sukcesem za pomoca System.Threading.Barrier.");
+        }
+    }
+}
+
+--------------------------------------------------------------------------------
+2. ФАЙЛ: Monitory\Punkt2.cs (Завдання 6.2: Власна реалізація бар'єра на базі Monitor.Wait та Monitor.PulseAll)
+--------------------------------------------------------------------------------
+using System;
+using System.Threading;
+using Barriers;
+
+namespace Monitory
+{
+    // Власна реалізація класу бар'єра на примітивах монітора CLR
+    public class MonitorBarrier
+    {
+        private readonly int totalThreads;
+        private int arrivedThreads = 0;
+        private int phase = 0;
+        private readonly object lockObj = new object();
+
+        public MonitorBarrier(int threads)
+        {
+            totalThreads = threads;
+        }
+
+        public void SignalAndWait()
+        {
+            lock (lockObj)
+            {
+                int currentPhase = phase;
+                arrivedThreads++;
+                
+                // Якщо прийшов останній очікуваний потік
+                if (arrivedThreads == totalThreads)
+                {
+                    arrivedThreads = 0;
+                    phase++; // перемикаємо фазу бар'єра
+                    Monitor.PulseAll(lockObj); // будимо всі сплячі потоки
+                }
+                else
+                {
+                    // Потоки чекають у циклі на зміну номера фази
+                    while (currentPhase == phase)
+                    {
+                        Monitor.Wait(lockObj);
+                    }
+                }
+            }
+        }
+    }
+
+    class Punkt2
+    {
+        const int howmanyspecimens = 16;
+        const int howmanyiterations = 100;
+        static double[] specimens = new double[howmanyspecimens];
+        static double[] evaluatedValues = new double[howmanyspecimens];
+
+        // Застосування власного класу MonitorBarrier
+        static MonitorBarrier evalBarrier = new MonitorBarrier(howmanyspecimens + 1);
+        static MonitorBarrier genBarrier = new MonitorBarrier(howmanyspecimens + 1);
+
+        static void Main(string[] args)
+        {
+            GAHelper.FillFirstGeneration(specimens);
+
+            Thread[] workers = new Thread[howmanyspecimens];
+            for (int i = 0; i < howmanyspecimens; i++)
+            {
+                int id = i;
+                workers[i] = new Thread(() =>
+                {
+                    for (int iter = 0; iter < howmanyiterations; iter++)
+                    {
+                        evaluatedValues[id] = GAHelper.Evaluate(specimens[id]);
+                        evalBarrier.SignalAndWait();
+                        genBarrier.SignalAndWait();
+                    }
+                });
+                workers[i].Start();
+            }
+
+            for (int iter = 0; iter < howmanyiterations; iter++)
+            {
+                evalBarrier.SignalAndWait();
+                if (iter % 20 == 0 || iter == howmanyiterations - 1)
+                {
+                    Console.WriteLine($"[MonitorBarrier] Pokolenie {iter,3} | Najlepszy: {evaluatedValues[0]:F4}");
+                }
+                specimens = GAHelper.NewGeneration(specimens, evaluatedValues);
+                GAHelper.Mutation(specimens);
+                genBarrier.SignalAndWait();
+            }
+
+            for (int i = 0; i < howmanyspecimens; i++)
+            {
+                workers[i].Join();
+            }
+
+            Console.WriteLine("\nEwolucja zakonczona sukcesem za pomoca wlasnej klasy MonitorBarrier (Monitor.Wait / PulseAll).");
+        }
+    }
+}
+
+--------------------------------------------------------------------------------
+3. ФАЙЛ: WPFThreads\MainWindow.xaml.cs (Завдання 6.3: Безпечна взаємодія фонових потоків з WPF через Dispatcher.Invoke)
+--------------------------------------------------------------------------------
+using System;
+using System.Collections.Concurrent;
+using System.Diagnostics;
+using System.Threading;
+using System.Windows;
+
+namespace WPFThreads
+{
+    public partial class MainWindow : Window
+    {
+        // Оновлення текстових полів та лічильника через диспетчер інтерфейсу користувача (UI Dispatcher)
+        // В елементах керування WPF реалізовано правило Thread Affinity (прив'язка до потоку UI).
+        // Спроба оновити kontrolke з фонового потоку напряму викличе InvalidOperationException.
+        // За допомогою Dispatcher.Invoke дія пакується в чергу повідомлень головного потоку GUI.
+        
+        // У методі Consumer:
+        // Dispatcher.Invoke(() => {
+        //     collectionAmountLabel.Content = buffer.Count.ToString();
+        //     consumerOutput.AppendText("Consumer get " + product + "\r");
+        //     consumerOutput.ScrollToEnd();
+        // });
+
+        // У методі Producer:
+        // Dispatcher.Invoke(() => {
+        //     collectionAmountLabel.Content = buffer.Count.ToString();
+        //     producerOutput.AppendText("Producer put " + product + "\r");
+        //     producerOutput.ScrollToEnd();
+        // });
+    }
+}
+
+
+================================================================================
+
+================================================================================
+РОЗДІЛ 2. ШПАРГАЛКА ДЛЯ УСНОГО ЗАХИСТУ ПЕРЕД ВИКЛАДАЧЕМ
+================================================================================
+
+1. Чому для синхронізації етапів генетичного алгоритму обов'язково потрібні ДВІ бар'єри, а не одна?
+ВІДПОВІДЬ:
+- Якщо використати лише одну бар'єру: 16 потоків обчислили Evaluate() для своїх особин і зупинилися на бар'єрі. Головний потік розблоковується і починає схрещування та мутацію для створення нового покоління.
+- АЛЕ щойно перша бар'єра спрацювала, 16 робочих потоків ТАКОЖ розблоковуються і відразу ж біжать на наступну ітерацію циклу обчислювати Evaluate()!
+- Виникає катастрофічний стан гонки (race condition): робочі потоки намагаються оцінювати особин у той самий момент, коли головний потік ще тільки змінює їхні гени!
+- Друга бар'єра (generationBarrier) блокує робочі потоки доти, доки головний потік повністю не завершить генерацію всього нового покоління.
+
+2. Як влаштована власна бар'єра MonitorBarrier на базі Monitor.Wait і PulseAll?
+ВІДПОВІДЬ:
+- Клас інкапсулює лічильник потоків, що прибули (arrivedThreads), лічильник поточної фази (phase) та об'єкт синхронізації lockObj.
+- Коли потік викликає SignalAndWait(), він заходить у секцію lock (lockObj) і запам'ятовує свій номер фази: int currentPhase = phase;.
+- Потім збільшує arrivedThreads++. Якщо прибув останній (17-й) потік:
+    arrivedThreads = 0;
+    phase++;
+    Monitor.PulseAll(lockObj); // будить абсолютно всі 16 потоків, що чекають!
+- Якщо ж прибув НЕ останній потік, він заходить у цикл очікування зміни фази:
+    while (currentPhase == phase) { Monitor.Wait(lockObj); }
+  Використання while замість if гарантує захист від так званих «хибних пробуджень» (spurious wakeups), а лічильник фази захищає від повторного блокування, якщо потік уже пройшов бар'єру.
+
+3. Чому у WPF не можна напряму оновлювати елементи інтерфейсу з фонових потоків?
+ВІДПОВІДЬ:
+- Графічна підсистема WPF (як і WinForms) побудована на моделі однопотокового апартаменту (STA — Single Thread Apartment). Елементи UI (кнопки, текстові поля, мітки) прив'язані до одного конкретного потоку, в якому крутиться цикл повідомлень ОС.
+- Будь-яка спроба змінити властивість контрола (наприклад, Text або Content) з іншого потоку негайно викликає виняток:
+    InvalidOperationException: The calling thread cannot access this object because a different thread owns it.
+- Для безпечного оновлення необхідно використовувати об'єкт Dispatcher, який володіє чергою повідомлень вікна:
+    Dispatcher.Invoke(() => { collectionAmountLabel.Content = buffer.Count; });
+  Метод Invoke маршалізує виконання делегата в головний UI-потік, де він безпечно виконується без помилок доступу.

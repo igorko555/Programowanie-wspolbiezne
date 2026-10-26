@@ -61,7 +61,7 @@ namespace Barriers
             {
                 parval.Add(new Tuple<double, double>(parameters[i], values[i]));
             }
-            var sortedValues = parval.OrderBy(t => t.Item2); //sort by values
+            var sortedValues = parval.OrderBy(t => t.Item2);
             double sum = (values.Length+1)*values.Length / 2;
             Random rand = new Random(Thread.CurrentThread.ManagedThreadId * (int)DateTime.Now.Ticks);
             int randomValue = rand.Next(0, (int)sum);
@@ -95,9 +95,9 @@ namespace Barriers
                 int index = rand.Next(0, spec.Length - 1);
                 byte[] bytes = BitConverter.GetBytes(spec[index]);
                 ulong specbyte = BitConverter.ToUInt64(BitConverter.GetBytes(spec[index]));
-                specbyte ^= mut; //binary xor 
-                specbyte ^= mut2; //binary xor //we do i twice 
-                specbyte ^= mut3; //binary xor //we do even more
+                specbyte ^= mut;
+                specbyte ^= mut2;
+                specbyte ^= mut3;
                 spec[index] = BitConverter.ToDouble(BitConverter.GetBytes(specbyte));
             }
             

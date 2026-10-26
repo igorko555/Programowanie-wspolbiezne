@@ -39,7 +39,7 @@ namespace Monitory
         }
     }
 
-    class Punkt6
+    class Punkt2
     {
         const int howmanyspecimens = 16;
         const int howmanyiterations = 100;

@@ -85,10 +85,10 @@ namespace WPFThreads
 
         private void Stop()
         {
-            cts.Cancel(); //signal cancellation
-            consumers.ForEach(c => c.Join()); //wait for all consumers
-            producer.Join(); //wait for producer
-            consumers.Clear(); //clear array of consummers
+            cts.Cancel();
+            consumers.ForEach(c => c.Join());
+            producer.Join();
+            consumers.Clear();
             cts.Dispose();
         }
 
@@ -102,7 +102,7 @@ namespace WPFThreads
             {
                 try
                 {
-                    ct.WaitHandle.WaitOne(TimeSpan.FromMilliseconds(rand.Next(0, consumerDelay))); //it's like a Sleep with cancellation token
+                    ct.WaitHandle.WaitOne(TimeSpan.FromMilliseconds(rand.Next(0, consumerDelay)));
                     product = buffer.Take(ct);
                     Dispatcher.Invoke(() => {
                         collectionAmountLabel.Content = buffer.Count.ToString();
@@ -130,7 +130,7 @@ namespace WPFThreads
                 try
                 {
                     
-                    ct.WaitHandle.WaitOne(TimeSpan.FromMilliseconds(rand.Next(0, producerDelay))); //it's like a Sleep with cancellation token
+                    ct.WaitHandle.WaitOne(TimeSpan.FromMilliseconds(rand.Next(0, producerDelay)));
                     product = number++;
                     buffer.Add(product, ct);
                     Dispatcher.Invoke(() => {

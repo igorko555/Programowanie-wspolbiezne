@@ -4,13 +4,13 @@
 КАФЕДРА ІНФОРМАТИЧНИХ СИСТЕМ
 ПРЕДМЕТ: ПАРАЛЕЛЬНЕ ТА БАГАТОПОТОКОВЕ ПРОГРАМУВАННЯ (PROGRAMOWANIE WSPÓŁBIEŻNE)
 
-СПРАВОЗДАННЯ № 5-6: КОЛЕКЦІЇ ВСПÓŁБЄЖНЕ, БАР'ЄРИ ТА БАГАТОПОТОКОВИЙ GUI WPF
+СПРАВОЗДАННЯ № 5: БЕЗПЕКА ПОТОКІВ У КОЛЕКЦІЯХ ТА БУФЕРИ ПРОДУЦЕНТ-КОНСУМЕНТ
+ТЕМА: Kolekcje współbieżne, synchronizacja lock oraz wzorzec producent-konsument
 АВТОР: Artem Hizhovskyi | ГРУПА: 3ID11B | ДАТА: 30.10.2026
 ================================================================================
 
 РОЗДІЛ 1. ВИХІДНІ КОДИ ПРОГРАМ З ДЕТАЛЬНИМИ ПОРОЗРЯДНИМИ ПОЯСНЕННЯМИ (УКРАЇНСЬКОЮ МОВОЮ)
 
---------------------------------------------------------------------------------
 1. ФАЙЛ: UnsafeCollection\Punkt1.cs (Завдання 5.2-5.4: List<T> vs lock vs ConcurrentBag)
 --------------------------------------------------------------------------------
 using System;
@@ -387,217 +387,6 @@ namespace BlockingCollectionDemo
 }
 
 --------------------------------------------------------------------------------
-5. ФАЙЛ: Barriers\Punkt5.cs (Завдання 6.1: Двоетапна бар'єрна синхронізація в генетичному алгоритмі)
---------------------------------------------------------------------------------
-using System;
-using System.Threading;
-
-namespace Barriers
-{
-    class Punkt5
-    {
-        const int howmanyspecimens = 16;
-        const int howmanyiterations = 100;
-        static double[] specimens = new double[howmanyspecimens];
-        static double[] evaluatedValues = new double[howmanyspecimens];
-
-        // ДВІ БАР'ЄРИ СИНХРОНІЗАЦІЇ (16 робочих потоків + 1 головний потік = 17 учасників)
-        // Бар'єр 1: Фіксація закінчення фази оцінки особинок
-        static Barrier evaluationBarrier = new Barrier(howmanyspecimens + 1);
-        
-        // Бар'єр 2: Фіксація готовності нового покоління (селекція/схрещування/мутація завершені)
-        static Barrier generationBarrier = new Barrier(howmanyspecimens + 1);
-
-        static void Main(string[] args)
-        {
-            GAHelper.FillFirstGeneration(specimens);
-
-            // Створюємо 16 потоків лише один раз перед входом у цикл еволюції
-            Thread[] workers = new Thread[howmanyspecimens];
-            for (int i = 0; i < howmanyspecimens; i++)
-            {
-                int id = i;
-                workers[i] = new Thread(() =>
-                {
-                    for (int iter = 0; iter < howmanyiterations; iter++)
-                    {
-                        // 1. Оцінка власної одинки
-                        evaluatedValues[id] = GAHelper.Evaluate(specimens[id]);
-                        
-                        // Доповідь на бар'єрі оцінки: потік чекає, поки всі інші 15 оцінять своїх особинок
-                        evaluationBarrier.SignalAndWait();
-                        
-                        // Очікування на другому бар'єрі: головний потік мусить згенерувати нову популяцію
-                        generationBarrier.SignalAndWait();
-                    }
-                });
-                workers[i].Start();
-            }
-
-            // Цикл поколінь головного потоку
-            for (int iter = 0; iter < howmanyiterations; iter++)
-            {
-                // Очікування, поки всі 16 потоків закінчать оцінку
-                evaluationBarrier.SignalAndWait();
-                
-                if (iter % 20 == 0 || iter == howmanyiterations - 1)
-                {
-                    Console.WriteLine($"Pokolenie {iter,3} | Najlepszy: {evaluatedValues[0]:F4}");
-                }
-                
-                // Створення нового покоління: селекція, кросинговер, мутація
-                specimens = GAHelper.NewGeneration(specimens, evaluatedValues);
-                GAHelper.Mutation(specimens);
-                
-                // Сигнал робочим потокам: нове покоління готове, можна розпочинати наступний цикл
-                generationBarrier.SignalAndWait();
-            }
-
-            for (int i = 0; i < howmanyspecimens; i++)
-            {
-                workers[i].Join();
-            }
-
-            Console.WriteLine("\nEwolucja zakonczona sukcesem za pomoca System.Threading.Barrier.");
-        }
-    }
-}
-
---------------------------------------------------------------------------------
-6. ФАЙЛ: Monitory\Punkt6.cs (Завдання 6.2: Власна реалізація бар'єра на базі Monitor.Wait та Monitor.PulseAll)
---------------------------------------------------------------------------------
-using System;
-using System.Threading;
-using Barriers;
-
-namespace Monitory
-{
-    // Власна реалізація класу бар'єра на примітивах монітора CLR
-    public class MonitorBarrier
-    {
-        private readonly int totalThreads;
-        private int arrivedThreads = 0;
-        private int phase = 0;
-        private readonly object lockObj = new object();
-
-        public MonitorBarrier(int threads)
-        {
-            totalThreads = threads;
-        }
-
-        public void SignalAndWait()
-        {
-            lock (lockObj)
-            {
-                int currentPhase = phase;
-                arrivedThreads++;
-                
-                // Якщо прийшов останній очікуваний потік
-                if (arrivedThreads == totalThreads)
-                {
-                    arrivedThreads = 0;
-                    phase++; // перемикаємо фазу бар'єра
-                    Monitor.PulseAll(lockObj); // будимо всі сплячі потоки
-                }
-                else
-                {
-                    // Потоки чекають у циклі на зміну номера фази
-                    while (currentPhase == phase)
-                    {
-                        Monitor.Wait(lockObj);
-                    }
-                }
-            }
-        }
-    }
-
-    class Punkt6
-    {
-        const int howmanyspecimens = 16;
-        const int howmanyiterations = 100;
-        static double[] specimens = new double[howmanyspecimens];
-        static double[] evaluatedValues = new double[howmanyspecimens];
-
-        // Застосування власного класу MonitorBarrier
-        static MonitorBarrier evalBarrier = new MonitorBarrier(howmanyspecimens + 1);
-        static MonitorBarrier genBarrier = new MonitorBarrier(howmanyspecimens + 1);
-
-        static void Main(string[] args)
-        {
-            GAHelper.FillFirstGeneration(specimens);
-
-            Thread[] workers = new Thread[howmanyspecimens];
-            for (int i = 0; i < howmanyspecimens; i++)
-            {
-                int id = i;
-                workers[i] = new Thread(() =>
-                {
-                    for (int iter = 0; iter < howmanyiterations; iter++)
-                    {
-                        evaluatedValues[id] = GAHelper.Evaluate(specimens[id]);
-                        evalBarrier.SignalAndWait();
-                        genBarrier.SignalAndWait();
-                    }
-                });
-                workers[i].Start();
-            }
-
-            for (int iter = 0; iter < howmanyiterations; iter++)
-            {
-                evalBarrier.SignalAndWait();
-                if (iter % 20 == 0 || iter == howmanyiterations - 1)
-                {
-                    Console.WriteLine($"[MonitorBarrier] Pokolenie {iter,3} | Najlepszy: {evaluatedValues[0]:F4}");
-                }
-                specimens = GAHelper.NewGeneration(specimens, evaluatedValues);
-                GAHelper.Mutation(specimens);
-                genBarrier.SignalAndWait();
-            }
-
-            for (int i = 0; i < howmanyspecimens; i++)
-            {
-                workers[i].Join();
-            }
-
-            Console.WriteLine("\nEwolucja zakonczona sukcesem za pomoca wlasnej klasy MonitorBarrier (Monitor.Wait / PulseAll).");
-        }
-    }
-}
-
---------------------------------------------------------------------------------
-7. ФАЙЛ: WPFThreads\MainWindow.xaml.cs (Завдання 6.3: Безпечна взаємодія фонових потоків з WPF через Dispatcher.Invoke)
---------------------------------------------------------------------------------
-using System;
-using System.Collections.Concurrent;
-using System.Diagnostics;
-using System.Threading;
-using System.Windows;
-
-namespace WPFThreads
-{
-    public partial class MainWindow : Window
-    {
-        // Оновлення текстових полів та лічильника через диспетчер інтерфейсу користувача (UI Dispatcher)
-        // В елементах керування WPF реалізовано правило Thread Affinity (прив'язка до потоку UI).
-        // Спроба оновити kontrolke з фонового потоку напряму викличе InvalidOperationException.
-        // За допомогою Dispatcher.Invoke дія пакується в чергу повідомлень головного потоку GUI.
-        
-        // У методі Consumer:
-        // Dispatcher.Invoke(() => {
-        //     collectionAmountLabel.Content = buffer.Count.ToString();
-        //     consumerOutput.AppendText("Consumer get " + product + "\r");
-        //     consumerOutput.ScrollToEnd();
-        // });
-
-        // У методі Producer:
-        // Dispatcher.Invoke(() => {
-        //     collectionAmountLabel.Content = buffer.Count.ToString();
-        //     producerOutput.AppendText("Producer put " + product + "\r");
-        //     producerOutput.ScrollToEnd();
-        // });
-    }
-}
-
 
 ================================================================================
 РОЗДІЛ 2. ШПАРГАЛКА ДЛЯ УСНОГО ЗАХИСТУ ПЕРЕД ВИКЛАДАЧЕМ
@@ -606,32 +395,26 @@ namespace WPFThreads
 1. Чому звичайна List<T> руйнується при паралельному додаванні елементів, а ConcurrentBag<T> працює надійно?
 ВІДПОВІДЬ:
 - List<T> інкапсулює звичайний одномірний масив T[] items та цілочисельний лічильник int size.
-- Метод Add() спочатку порівнює size з items.Length, і якщо місця немає — виділяє новий масив у 2 рази більший і копіює туди старі дані. Потім записує items[size] = item і виконує size++.
-- При конкурентному виклику без блокувань два потоки можуть одночасно вирішити розширити масив, перезаписати один одного дані за однаковим індексом size, або прочитати застаріле посилання на масив під час його релокації. Це викликає ArgumentException/IndexOutOfRangeException та втрату 90%+ даних.
-- ConcurrentBag<T> побудований за архітектурою Work-Stealing: для кожного потоку виділяється локальний двозв'язний список (ThreadLocal list). Додавання в "свою" чергу відбувається без блокувань за допомогою операцій Interlocked.
+- Коли кілька потоків одночасно викликають метод Add(), відбувається одночасний запис за одним і тим самим індексом, а також паралельне збільшення ємності (EnsureCapacity), через що один потік може перезаписати значення іншого, або посилатися на старий масив під час його реаллокації.
+- ConcurrentBag<T> реалізує концепцію локальних списків для кожного потоку (ThreadLocalList). Коли потік додає елемент у колекцію, він поміщає його у свою власну голову двозв'язного списку без глобального блокування. Якщо потоку потрібно забрати елемент, він спочатку бере свій власний елемент (LIFO), і лише якщо його список порожній, намагається «вкрасти» (Work Stealing) елемент із хвоста іншого потоку через коротку атомарну синхронізацію.
 
 2. У чому полягає помилка TOCTOU (Time-of-Check to Time-of-Use) у завданні з унікальною колекцією?
 ВІДПОВІДЬ:
-- TOCTOU виникає, коли між операцією перевірки стану (Check) та операцією виконання дії на основі цієї перевірки (Act) існує часовий розрив, у якому інший потік змінює стан ресурсу.
-- Конструкція while (bag.Any(x => x == number)) number = rand.Next(); bag.Add(number); складається з двох окремих атомарних операцій: Any() та Add(). Коли потік А перевірив Any() і дізнався, що числа 42 ще немає, операційна система перемикає контекст на потік Б. Потік Б також перевіряє число 42, бачить що його немає, і додає 42. Потім керування повертається до потоку А, і він також додає 42. В результаті в колекції з'являється дублікат!
-- Розв'язання: об'єднати перевірку і додавання в єдину неподільну транзакцію за допомогою lock, або використати ConcurrentDictionary.TryAdd, де атомарність гарантується на рівні структури даних.
+- Класична помилка виникає, коли між операцією перевірки умови (Check) та операцією виконання дії (Act / Use) виникає часовий інтервал, під час якого інший потік встигає змінити стан системи.
+- У коді з ConcurrentBag:
+    while (numbers.Any(x => x == number)) { number = rand.Next(); }
+    numbers.Add(number);
+  Потік А перевіряє колекцію: числа ще немає. Потім планувальник ОС перемикає контекст на Потік Б. Потік Б теж перевіряє — числа ще немає, і додає його. Потім продовжує роботу Потік А і теж додає це саме число! В результаті в колекції з'являються дублікати.
+- Виправлення 1: Захистити блок перевірки і додавання глобальним ryglem lock.
+- Виправлення 2: Використати атомарний метод TryAdd() колекції ConcurrentDictionary<int, byte>, який виконує перевірку наявності ключа та його вставку як одну неподільну операцію.
 
-3. Чому для синхронізації етапів генетичного алгоритму обов'язково потрібні ДВІ бар'єри, а не одна?
+3. Чому використання SemaphoreSlim у ProducerConsumerQ набагато ефективніше за безкінечний цикл із TryDequeue()?
 ВІДПОВІДЬ:
-- Якби була лише одна бар'єра, після завершення оцінки (Evaluate) робочі потоки відзначилися б на бар'єрі і розблокували головний потік.
-- Головний потік повинен виконати селекцію та схрещування (NewGeneration) і мутацію. Ця операція займає певний процесорний час.
-- Якщо другого бар'єра немає, швидкі робочі потоки миттєво підуть на наступну ітерацію циклу for і почнуть оцінювати масив specimens, який головний потік ЩЕ НЕ ВСТИГ ЗГЕНЕРУВАТИ! Вони або прочитають напівмутовані дані, або взагалі оцінять старе покоління вдруге.
-- Тому потрібен другий бар'єр (generationBarrier), який тримає робочі потоки в очікуванні, доки головний потік повністю не сформує нову популяцію.
+- Якщо потік-споживач у циклі викликає TryDequeue(), і якщо черга порожня, він продовжує молотити процесорні такти (активне очікування / busy waiting, або SpinWait), навантажуючи CPU на 100%.
+- SemaphoreSlim інкапсулює лічильник доступних елементів черги. Споживач викликає sem.Wait(), і якщо лічильник рівний 0, операційна система негайно переводить потік у стан сну (WaitSleepJoin), звільняючи ядро процесора для інших задач. Коли виробник додає елемент (Enqueue), він викликає sem.Release(), і тільки тоді ОС миттєво будить один очікуючий потік-споживач.
 
-4. Як влаштована власна бар'єра MonitorBarrier на базі Monitor.Wait і PulseAll?
+4. Які переваги надає BlockingCollection<T> для реалізації патерну Producent-Konsument?
 ВІДПОВІДЬ:
-- Клас містить цілочисельний лічильник arrivedThreads, номер поточної фази phase та об'єкт rygla lockObj.
-- Кожен потік під захистом lock збільшує arrivedThreads.
-- Якщо arrivedThreads < totalThreads, потік запам'ятовує номер своєї фази і викликає Monitor.Wait(lockObj) у циклі while (currentPhase == phase). Метод Wait атомарно відпускає lock і переводить потік у стан сну.
-- Останній (N-й) потік обнуляє лічильник arrivedThreads = 0, інкрементує phase++ і викликає Monitor.PulseAll(lockObj). Це переводить УСІ сплячі потоки в чергу готовності, вони по черзі захоплюють lock, бачать що phase змінилася, і успішно виходять із бар'єра.
-
-5. Чому у WPF не можна напряму оновлювати елементи інтерфейсу з фонових потоків?
-ВІДПОВІДЬ:
-- Усі елементи керування WPF (UIElement) успадковують клас DispatcherObject і підпорядковуються принципу Thread Affinity: звертатися до властивостей вікна має право виключно той потік, який створив це вікно (головний потік UI).
-- Спроба змінити Text, Content або викликати метод контрола з фонового потоку призведе до винятку InvalidOperationException ("The calling thread cannot access this object because a different thread owns it").
-- Dispatcher.Invoke приймає делегат (Action) і поміщає його в чергу повідомлень диспетчера інтерфейсу, гарантуючи, що зміна властивості буде виконана саме потоком UI у безпечний момент.
+- BlockingCollection<T> забезпечує обмежену ємність (bounded capacity). Якщо буфер заповнений (наприклад, 10 елементів), виклик Add() автоматично блокує потік виробника, запобігаючи переповненню оперативної пам'яті (OutOfMemoryException).
+- Метод Take() автоматично блокує споживача, якщо буфер порожній, повністю усуваючи активне очікування.
+- Метод CompleteAdding() безпечно сповіщає всіх споживачів, що нових даних більше не буде, дозволяючи їм вичитати залишки і штатно завершити цикл foreach (var item in buffer.GetConsumingEnumerable()).
