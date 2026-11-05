@@ -1,4 +1,4 @@
-﻿using Barriers;
+using Barriers;
 using System;
 using System.Threading;
 
@@ -72,9 +72,10 @@ namespace Monitory
             for (int iter = 0; iter < howmanyiterations; iter++)
             {
                 evalBarrier.SignalAndWait();
-                if (iter % 20 == 0 || iter == howmanyiterations - 1)
+                if (iter % 10 == 0 || iter == howmanyiterations - 1)
                 {
-                    Console.WriteLine($"[MonitorBarrier] Pokolenie {iter,3} | Najlepszy: {evaluatedValues[0]:F4}");
+                    Console.Write($"[MonitorBarrier] Pokolenie {iter,3} |");
+                    GAHelper.PrintGenerationWithValues(specimens, evaluatedValues);
                 }
                 specimens = GAHelper.NewGeneration(specimens, evaluatedValues);
                 GAHelper.Mutation(specimens);
@@ -90,4 +91,3 @@ namespace Monitory
         }
     }
 }
-

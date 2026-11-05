@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading;
 
 namespace Barriers
@@ -36,9 +36,10 @@ namespace Barriers
             for (int iter = 0; iter < howmanyiterations; iter++)
             {
                 evaluationBarrier.SignalAndWait();
-                if (iter % 20 == 0 || iter == howmanyiterations - 1)
+                if (iter % 10 == 0 || iter == howmanyiterations - 1)
                 {
-                    Console.WriteLine($"Pokolenie {iter,3} | Najlepszy: {evaluatedValues[0]:F4}");
+                    Console.Write($"Pokolenie {iter,3} |");
+                    GAHelper.PrintGenerationWithValues(specimens, evaluatedValues);
                 }
                 specimens = GAHelper.NewGeneration(specimens, evaluatedValues);
                 GAHelper.Mutation(specimens);
