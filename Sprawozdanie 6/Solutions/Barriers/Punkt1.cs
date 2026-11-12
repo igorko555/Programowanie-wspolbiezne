@@ -6,7 +6,7 @@ namespace Barriers
     class Punkt1
     {
         const int howmanyspecimens = 16;
-        const int howmanyiterations = 100;
+        const int howmanyiterations = 2000;
         static double[] specimens = new double[howmanyspecimens];
         static double[] evaluatedValues = new double[howmanyspecimens];
 
@@ -36,9 +36,9 @@ namespace Barriers
             for (int iter = 0; iter < howmanyiterations; iter++)
             {
                 evaluationBarrier.SignalAndWait();
-                if (iter % 10 == 0 || iter == howmanyiterations - 1)
+                if (iter % 200 == 0 || iter == howmanyiterations - 1)
                 {
-                    Console.Write($"Pokolenie {iter,3} |");
+                    Console.Write($"Pokolenie {iter,4} |");
                     GAHelper.PrintGenerationWithValues(specimens, evaluatedValues);
                 }
                 specimens = GAHelper.NewGeneration(specimens, evaluatedValues);

@@ -39,7 +39,7 @@ namespace Snow
                     Console.Write('*');
                 }
 
-                Thread.Sleep(Random.Shared.Next(40, 100));
+                Thread.Sleep(Random.Shared.Next(80, 150));
 
                 lock (consoleLock)
                 {
@@ -65,11 +65,11 @@ namespace Snow
 
         static void Main(string[] args)
         {
-            ThreadPool.SetMinThreads(64, 64);
+            ThreadPool.SetMinThreads(128, 128);
             Console.Clear();
             Console.CursorVisible = false;
 
-            int starCount = 30;
+            int starCount = 100;
             Task[] tasks = new Task[starCount];
             ConsoleColor[] colors = { ConsoleColor.White, ConsoleColor.Cyan, ConsoleColor.Gray };
 
@@ -77,7 +77,7 @@ namespace Snow
             {
                 StarParameter param = new StarParameter
                 {
-                    Iterations = 60,
+                    Iterations = 300,
                     Color = colors[i % colors.Length],
                     InitialX = Random.Shared.Next(0, Math.Max(20, Console.WindowWidth))
                 };
@@ -94,6 +94,7 @@ namespace Snow
                 Console.CursorVisible = true;
                 Console.SetCursorPosition(0, 0);
                 Console.WriteLine("Animacja Snow zakonczona sukcesem.");
+                Console.ReadKey();
             }
         }
     }
