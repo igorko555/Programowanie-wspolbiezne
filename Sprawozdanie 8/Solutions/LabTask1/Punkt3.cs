@@ -21,7 +21,7 @@ namespace LabTask1
 
         static void Main(string[] args)
         {
-            const int chainLength = 20000;
+            const int chainLength = 100000;
             Console.WriteLine($"Zadanie 3: Przekazywanie wartosci przez ContinueWith ({chainLength} zadan)\n");
 
             Stopwatch sw = Stopwatch.StartNew();

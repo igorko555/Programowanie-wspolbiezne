@@ -35,7 +35,7 @@ namespace PrimesTask
             const int countToTotal = 10000000;
             int cores = Environment.ProcessorCount;
 
-            Console.WriteLine($"Zadanie 5: Liczby pierwsze w zakresie {countFromTotal}..{countToTotal} (Rdzenie: {cores})\n");
+            Console.WriteLine($"Liczby pierwsze w zakresie {countFromTotal}..{countToTotal} (Rdzenie: {cores})\n");
 
             Stopwatch sw = Stopwatch.StartNew();
             List<int> singleThreadPrimes = FindPrimesRange(countFromTotal, countToTotal);

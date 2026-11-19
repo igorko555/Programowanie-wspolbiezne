@@ -15,7 +15,7 @@ namespace FibonacciTask
         static void Main(string[] args)
         {
             const int count = 20000;
-            Console.WriteLine($"Zadanie 4: Ciag Fibonacciego do wyrazu {count}\n");
+            Console.WriteLine($"Ciag Fibonacciego do wyrazu {count}\n");
 
             Stopwatch sw = Stopwatch.StartNew();
             Task<Tuple<BigInteger, BigInteger>> pipeline = Task.FromResult(Tuple.Create(BigInteger.Zero, BigInteger.One));

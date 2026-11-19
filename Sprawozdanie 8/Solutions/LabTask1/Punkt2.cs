@@ -21,8 +21,8 @@ namespace LabTask1
 
         static void Main(string[] args)
         {
-            const int chainLength = 20000;
-            Console.WriteLine($"Zadanie 2: Obciazenie DoPointlessMess ({chainLength} zadan)\n");
+            const int chainLength = 100000;
+            Console.WriteLine($"Obciazenie DoPointlessMess ({chainLength} zadan)\n");
 
             Stopwatch sw = Stopwatch.StartNew();
             Task taskSync = Task.Factory.StartNew(() => { });

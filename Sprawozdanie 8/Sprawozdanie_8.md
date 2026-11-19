@@ -161,8 +161,8 @@ namespace LabTask1
 
         static void Main(string[] args)
         {
-            const int chainLength = 20000;
-            Console.WriteLine($"Zadanie 2: Obciazenie DoPointlessMess ({chainLength} zadan)\n");
+            const int chainLength = 100000;
+            Console.WriteLine($"Obciazenie DoPointlessMess ({chainLength} zadan)\n");
 
             Stopwatch sw = Stopwatch.StartNew();
             Task taskSync = Task.Factory.StartNew(() => { });
@@ -217,7 +217,7 @@ namespace LabTask1
 
         static void Main(string[] args)
         {
-            const int chainLength = 20000;
+            const int chainLength = 100000;
             Console.WriteLine($"Zadanie 3: Przekazywanie wartosci przez ContinueWith ({chainLength} zadan)\n");
 
             Stopwatch sw = Stopwatch.StartNew();
@@ -265,7 +265,7 @@ namespace FibonacciTask
         static void Main(string[] args)
         {
             const int count = 20000;
-            Console.WriteLine($"Zadanie 4: Ciag Fibonacciego do wyrazu {count}\n");
+            Console.WriteLine($"Ciag Fibonacciego do wyrazu {count}\n");
 
             Stopwatch sw = Stopwatch.StartNew();
             Task<Tuple<BigInteger, BigInteger>> pipeline = Task.FromResult(Tuple.Create(BigInteger.Zero, BigInteger.One));
@@ -336,7 +336,7 @@ namespace PrimesTask
             const int countToTotal = 10000000;
             int cores = Environment.ProcessorCount;
 
-            Console.WriteLine($"Zadanie 5: Liczby pierwsze w zakresie {countFromTotal}..{countToTotal} (Rdzenie: {cores})\n");
+            Console.WriteLine($"Liczby pierwsze w zakresie {countFromTotal}..{countToTotal} (Rdzenie: {cores})\n");
 
             Stopwatch sw = Stopwatch.StartNew();
             List<int> singleThreadPrimes = FindPrimesRange(countFromTotal, countToTotal);
@@ -429,7 +429,7 @@ namespace PrimesTask
         {
             const int start = 0;
             const int end = 10000000;
-            Console.WriteLine($"Zadanie 6: PrimesGenerator (async/await z Task.WhenAll) w zakresie {start}..{end}\n");
+            Console.WriteLine($"PrimesGenerator (async/await z Task.WhenAll) w zakresie {start}..{end}\n");
 
             Stopwatch sw = Stopwatch.StartNew();
             List<int> primes = PrimesGenerator.FindPrimesAsync(start, end).GetAwaiter().GetResult();
