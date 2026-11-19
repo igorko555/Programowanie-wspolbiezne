@@ -48,12 +48,23 @@ Każdy moduł laboratoryjny zawiera:
 - **Punkt 1–6:** Podstawy `Task`, `Task.Run`, `Task.WaitAll`, `Task.WhenAll`, obsługa wyjątków `AggregateException`.
 - **Punkt 7 (Snow):** Wielowątkowa symulacja opadów śniegu w konsoli z synchronizacją bufora ekranu (`Console.SetCursorPosition`, `ThreadPool`).
 
-### [Sprawozdanie 8-9](./Sprawozdanie%208-9/) — Zaawansowane Zadania Asynchroniczne
-- **Punkt 1:** Synchroniczne i asynchroniczne łańcuchy kontynuacji (`ContinueWith`, `ExecuteSynchronously`).
-- **Punkt 2:** Równoległe potoki obliczeniowe dużych liczb Fibonacciego (`BigInteger`).
-- **Punkt 3:** Łączenie wielu zadań w jedno podsumowujące (`ContinueWhenAll`).
-- **Punkt 4:** Anulowanie zadań (`CancellationTokenSource`), raportowanie postępu (`IProgress<T>`) i gałęzie błędów (`TaskContinuationOptions.OnlyOnFaulted`).
-- **Punkt 5:** Benchmark sumowania tablicy (Sekwencyjnie vs `Parallel.ForEach` vs PLINQ vs TPL).
+### [Sprawozdanie 8](./Sprawozdanie%208/) — Zaawansowane Aspekty TPL i Przetwarzanie Potokowe
+- **Punkt 1 (LabTask1):** Łańcuchy kontynuacji i pomiar zysku wydajnościowego z flagą `TaskContinuationOptions.ExecuteSynchronously` (100 000 zadań, średnia z 5 prób).
+- **Punkt 2 (LabTask1):** Wpływ `ExecuteSynchronously` na zadania obciążające procesor z funkcją `DoPointlessMess()`.
+- **Punkt 3 (LabTask1):** Przekazywanie wartości w łańcuchu zadań potoku (`Task<double>`, parametr `aa`, właściwość `ant.Result`).
+- **Punkt 4 (FibonacciTask):** Potokowe obliczanie wyrazów ciągu Fibonacciego na typie arytmetyki o dowolnej precyzji `BigInteger` i `Tuple<BigInteger, BigInteger>` (20 000 ogniw potoku vs pętla sekwencyjna).
+- **Punkt 5 (PrimesTask):** Wielowątkowe sito liczb pierwszych z dekompozycją zakresu na `Environment.ProcessorCount` i scalaniem cząstkowych wyników przez `Task.Factory.ContinueWhenAll()`.
+- **Punkt 6 (PrimesTask):** Nowoczesny asynchroniczny generator liczb pierwszych — klasa statyczna `PrimesGenerator` z metodą TAP `FindPrimesAsync`, `await Task.WhenAll()` i zapytaniem LINQ `SelectMany`.
+
+### [Sprawozdanie 9](./Sprawozdanie%209/) — Kooperatywne Anulowanie, Raportowanie Postępu w TPL oraz Przetwarzanie Równoległe PLINQ
+- **Punkt 1 (TaskAdvanced):** Podstawowa metoda asynchroniczna `calculateSomethingAsync` z symulacją obciążenia CPU (`Thread.SpinWait`) i generowaniem liczb pseudolosowych (`Random.Shared`).
+- **Punkt 2 (TaskAdvanced):** Asynchroniczne raportowanie postępu za pomocą interfejsu `IProgress<(int current, int total)>` i klasy `Progress<T>` ze zdarzeniem `ProgressChanged`.
+- **Punkt 3 (TaskAdvanced):** Kooperatywne anulowanie zadania za pomocą `CancellationToken`, timera `CancelAfter(100)` i obsługi `AggregateException` z filtrowaniem `ae.Flatten().Handle()`.
+- **Punkt 4 (TaskAdvanced):** Warunkowe rozgałęzienia potoku kontynuacji — gałąź błędu `NotOnRanToCompletion` vs gałąź sukcesu `OnlyOnRanToCompletion` oczekiwane przez `Task.WaitAll`.
+- **Punkt 5 (BenchmarkSum):** Tablica 10 000 000 elementów i sekwencyjny baseline sumowania (`foreach`).
+- **Punkt 6 (BenchmarkSum):** Eksperymenty z sumowaniem równoległym: `Parallel.ForEach` bez blokady (wyścigi danych i błędna suma) vs z blokadą `lock` (wysoki narzut synchronizacji) vs LINQ `Sum()` vs PLINQ `ForAll()` vs PLINQ `AsParallel().Sum()`.
+- **Punkt 7 (BenchmarkSum):** Równoległe sumowanie z partycjonowaniem zakresu na `Environment.ProcessorCount`, uruchomieniem zadań `Task.Run()` z akumulatorami lokalnymi i scalaniem `Task.WhenAll`.
+- **Punkt 8 (BenchmarkSum):** Kompleksowy benchmark sumowania z nieliniową funkcją obciążeniową `calculatedValue(double)` wariantów sekwencyjnych, `Parallel.ForEach`, PLINQ oraz partycji TPL.
 
 ### [Sprawozdanie 10](./Sprawozdanie%2010/) — Klasa Parallel i Algorytmy Równoległe
 - **Punkt 1:** Sterowanie pętlami równoległymi (`ParallelLoopState.Break` vs `ParallelLoopState.Stop`).

@@ -1,0 +1,429 @@
+================================================================================
+ПОЛІТЕХНІКА СВЕНТОКШИСЬКА (POLITECHNIKA ŚWIĘTOKRZYSKA)
+ФАКУЛЬТЕТ ЕЛЕКТРОТЕХНІКИ, АВТОМАТИКИ ТА ІНФОРМАТИКИ
+КАФЕДРА ІНФОРМАТИЧНИХ СИСТЕМ
+ПРЕДМЕТ: ПАРАЛЕЛЬНЕ ТА БАГАТОПОТОКОВЕ ПРОГРАМУВАННЯ (PROGRAMOWANIE WSPÓŁBIEŻNE)
+
+СПРАВОЗДАННЯ № 8: BIBLIOTEKA ZADAŃ TPL – KONTYNUACJE I PRZETWARZANIE POTOKOWE
+АВТОРИ: Ihor Namachynskyi / Artem Hizhovskyi | ГРУПА: 3ID11B | ДАТА: 20.11.2026
+================================================================================
+
+РОЗДІЛ 1. ВИХІДНІ КОДИ ВСІХ 6 ЗАВДАНЬ З ДЕТАЛЬНИМИ ПОЯСНЕННЯМИ
+
+--------------------------------------------------------------------------------
+1. ФАЙЛ: Solutions/LabTask1/Punkt1.cs (Завдання 1: ExecuteSynchronously)
+--------------------------------------------------------------------------------
+// Призначення: дослідження часу ініціалізації та виконання 100 000 завдань
+// з прапорцем TaskContinuationOptions.ExecuteSynchronously та без нього.
+using System;
+using System.Diagnostics;
+using System.Threading.Tasks;
+
+namespace LabTask1
+{
+    class Punkt1
+    {
+        static void Main(string[] args)
+        {
+            const int chainLength = 100000;
+            const int runs = 5;
+
+            Console.WriteLine($"Zadanie 1: Lancuch {chainLength} zadan TPL (srednia z {runs} prob)\n");
+
+            // Тест 1: Ланцюг із прапорцем ExecuteSynchronously
+            // Наступне завдання виконується на тому ж потоці, що й попереднє,
+            // без повернення в чергу ThreadPool і без перемикання контексту.
+            long totalInitSync = 0, totalExecSync = 0;
+            for (int r = 0; r < runs; r++)
+            {
+                Stopwatch swInit = Stopwatch.StartNew();
+                Task task = Task.Factory.StartNew(() => { });
+                for (int i = 0; i < chainLength; i++)
+                {
+                    task = task.ContinueWith((ant, a) => { }, i, TaskContinuationOptions.ExecuteSynchronously);
+                }
+                swInit.Stop();
+
+                Stopwatch swExec = Stopwatch.StartNew();
+                task.Wait();
+                swExec.Stop();
+
+                totalInitSync += swInit.ElapsedMilliseconds;
+                totalExecSync += swExec.ElapsedMilliseconds;
+            }
+
+            long avgInitSync = totalInitSync / runs;
+            long avgExecSync = totalExecSync / runs;
+            Console.WriteLine($"[ExecuteSynchronously] Czas inicjalizacji: {avgInitSync} ms | Czas zakonczenia: {avgExecSync} ms");
+
+            // Тест 2: Стандартне планування (черга ThreadPool)
+            long totalInitAsync = 0, totalExecAsync = 0;
+            for (int r = 0; r < runs; r++)
+            {
+                Stopwatch swInit = Stopwatch.StartNew();
+                Task task = Task.Factory.StartNew(() => { });
+                for (int i = 0; i < chainLength; i++)
+                {
+                    task = task.ContinueWith((ant, a) => { }, i);
+                }
+                swInit.Stop();
+
+                Stopwatch swExec = Stopwatch.StartNew();
+                task.Wait();
+                swExec.Stop();
+
+                totalInitAsync += swInit.ElapsedMilliseconds;
+                totalExecAsync += swExec.ElapsedMilliseconds;
+            }
+
+            long avgInitAsync = totalInitAsync / runs;
+            long avgExecAsync = totalExecAsync / runs;
+            Console.WriteLine($"[Domyslnie / ThreadPool] Czas inicjalizacji: {avgInitAsync} ms | Czas zakonczenia: {avgExecAsync} ms");
+        }
+    }
+}
+
+--------------------------------------------------------------------------------
+2. ФАЙЛ: Solutions/LabTask1/Punkt2.cs (Завдання 2: ExecuteSynchronously з важкими завданнями)
+--------------------------------------------------------------------------------
+// Призначення: перевірка впливу ExecuteSynchronously на завдання з реальними
+// обчислювальними навантаженнями процесора (функція DoPointlessMess).
+using System;
+using System.Diagnostics;
+using System.Threading.Tasks;
+
+namespace LabTask1
+{
+    class Punkt2
+    {
+        static void DoPointlessMess()
+        {
+            double aa = 0;
+            for (int i = 0; i < 100; i++)
+            {
+                aa++;
+                aa = (Math.Sin(aa) + Math.Cos(aa));
+                aa = aa % Math.Sin(aa);
+                aa = Math.Log2(Math.Tanh(aa));
+                aa *= Math.Sin(aa) / Math.Cos(aa) == 0 ? 1 : Math.Cos(aa);
+            }
+        }
+
+        static void Main(string[] args)
+        {
+            const int chainLength = 20000;
+            Console.WriteLine($"Zadanie 2: Obciazenie DoPointlessMess ({chainLength} zadan)\n");
+
+            // Варіант з ExecuteSynchronously
+            Stopwatch sw = Stopwatch.StartNew();
+            Task taskSync = Task.Factory.StartNew(() => { });
+            for (int i = 0; i < chainLength; i++)
+            {
+                taskSync = taskSync.ContinueWith((ant, a) => DoPointlessMess(), i, TaskContinuationOptions.ExecuteSynchronously);
+            }
+            taskSync.Wait();
+            sw.Stop();
+            long timeSync = sw.ElapsedMilliseconds;
+            Console.WriteLine($"1. ContinueWith + ExecuteSynchronously: {timeSync} ms");
+
+            // Варіант без ExecuteSynchronously (черга пулу потоків)
+            sw.Restart();
+            Task taskAsync = Task.Factory.StartNew(() => { });
+            for (int i = 0; i < chainLength; i++)
+            {
+                taskAsync = taskAsync.ContinueWith((ant, a) => DoPointlessMess(), i);
+            }
+            taskAsync.Wait();
+            sw.Stop();
+            long timeAsync = sw.ElapsedMilliseconds;
+            Console.WriteLine($"2. ContinueWith domyslne (ThreadPool):  {timeAsync} ms");
+
+            Console.WriteLine($"\nRoznica czasowa: {Math.Abs(timeAsync - timeSync)} ms");
+        }
+    }
+}
+
+--------------------------------------------------------------------------------
+3. ФАЙЛ: Solutions/LabTask1/Punkt3.cs (Завдання 3: ExecuteSynchronously з передаванням значення)
+--------------------------------------------------------------------------------
+// Призначення: організація передавання даних з попереднього завдання у наступне
+// через ant.Result у континуаціях ContinueWith.
+using System;
+using System.Diagnostics;
+using System.Threading.Tasks;
+
+namespace LabTask1
+{
+    class Punkt3
+    {
+        static double DoPointlessMess(double aa)
+        {
+            for (int i = 0; i < 50; i++)
+            {
+                aa++;
+                aa = (Math.Sin(aa) + Math.Cos(aa));
+                aa = aa % Math.Sin(aa);
+                aa = Math.Log2(Math.Tanh(aa));
+                aa *= Math.Sin(aa) / Math.Cos(aa) == 0 ? 1 : Math.Cos(aa);
+            }
+            return aa;
+        }
+
+        static void Main(string[] args)
+        {
+            const int chainLength = 20000;
+            Console.WriteLine($"Zadanie 3: Przekazywanie wartosci przez ContinueWith ({chainLength} zadan)\n");
+
+            Stopwatch sw = Stopwatch.StartNew();
+            Task<double> taskSync = Task.Factory.StartNew(() => DoPointlessMess(1.0));
+            for (int i = 0; i < chainLength; i++)
+            {
+                taskSync = taskSync.ContinueWith(ant => DoPointlessMess(ant.Result), TaskContinuationOptions.ExecuteSynchronously);
+            }
+            double resultSync = taskSync.Result;
+            sw.Stop();
+            long timeSync = sw.ElapsedMilliseconds;
+            Console.WriteLine($"1. ContinueWith + ExecuteSynchronously: {timeSync} ms | Wynik: {resultSync:F4}");
+
+            sw.Restart();
+            Task<double> taskAsync = Task.Factory.StartNew(() => DoPointlessMess(1.0));
+            for (int i = 0; i < chainLength; i++)
+            {
+                taskAsync = taskAsync.ContinueWith(ant => DoPointlessMess(ant.Result));
+            }
+            double resultAsync = taskAsync.Result;
+            sw.Stop();
+            long timeAsync = sw.ElapsedMilliseconds;
+            Console.WriteLine($"2. ContinueWith domyslne (ThreadPool):  {timeAsync} ms | Wynik: {resultAsync:F4}");
+        }
+    }
+}
+
+--------------------------------------------------------------------------------
+4. ФАЙЛ: Solutions/FibonacciTask/Punkt4.cs (Завдання 4: Обчислення чисел Фібоначчі)
+--------------------------------------------------------------------------------
+// Призначення: конвеєрне обчислення чисел Фібоначчі на основі типу BigInteger
+// та кортежів Tuple<BigInteger, BigInteger> з порівнянням із послідовним кодом.
+using System;
+using System.Diagnostics;
+using System.Numerics;
+using System.Threading.Tasks;
+
+namespace FibonacciTask
+{
+    class Punkt4
+    {
+        static Tuple<BigInteger, BigInteger> BigFibonacci(BigInteger n2, BigInteger n1)
+        {
+            return Tuple.Create(n1, n1 + n2);
+        }
+
+        static void Main(string[] args)
+        {
+            const int count = 20000;
+            Console.WriteLine($"Zadanie 4: Ciag Fibonacciego do wyrazu {count}\n");
+
+            Stopwatch sw = Stopwatch.StartNew();
+            Task<Tuple<BigInteger, BigInteger>> pipeline = Task.FromResult(Tuple.Create(BigInteger.Zero, BigInteger.One));
+
+            for (int i = 2; i <= count; i++)
+            {
+                pipeline = pipeline.ContinueWith(prev =>
+                    BigFibonacci(prev.Result.Item1, prev.Result.Item2),
+                    TaskContinuationOptions.ExecuteSynchronously);
+            }
+
+            var result = pipeline.Result;
+            sw.Stop();
+            Console.WriteLine($"1. TPL Pipeline | F({count}) liczba cyfr: {result.Item2.ToString().Length} | Czas: {sw.ElapsedMilliseconds} ms");
+
+            sw.Restart();
+            BigInteger n2 = 0;
+            BigInteger n1 = 1;
+            for (int i = 2; i <= count; i++)
+            {
+                Tuple<BigInteger, BigInteger> res = BigFibonacci(n2, n1);
+                n2 = res.Item1;
+                n1 = res.Item2;
+            }
+            sw.Stop();
+            Console.WriteLine($"2. Sekwencyjnie | F({count}) liczba cyfr: {n1.ToString().Length} | Czas: {sw.ElapsedMilliseconds} ms");
+        }
+    }
+}
+
+--------------------------------------------------------------------------------
+5. ФАЙЛ: Solutions/PrimesTask/Punkt5.cs (Завдання 5: Пошук простих чисел через ContinueWhenAll)
+--------------------------------------------------------------------------------
+// Призначення: порівняння швидкості пошуку простих чисел на одному потоці
+// та на N задачах (Environment.ProcessorCount), об'єднаних Task.Factory.ContinueWhenAll.
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Threading.Tasks;
+
+namespace PrimesTask
+{
+    class Punkt5
+    {
+        public static bool IsPrime(int liczba)
+        {
+            if (liczba <= 1) return false;
+            if (liczba <= 3) return true;
+            if (liczba % 2 == 0 || liczba % 3 == 0) return false;
+            for (int i = 5; i * i <= liczba; i += 6)
+            {
+                if (liczba % i == 0 || liczba % (i + 2) == 0) return false;
+            }
+            return true;
+        }
+
+        static List<int> FindPrimesRange(int start, int end)
+        {
+            List<int> primes = new List<int>();
+            for (int i = start; i < end; i++)
+            {
+                if (IsPrime(i)) primes.Add(i);
+            }
+            return primes;
+        }
+
+        static void Main(string[] args)
+        {
+            const int countFromTotal = 0;
+            const int countToTotal = 500000;
+            int cores = Environment.ProcessorCount;
+
+            Console.WriteLine($"Zadanie 5: Liczby pierwsze w zakresie {countFromTotal}..{countToTotal} (Rdzenie: {cores})\n");
+
+            Stopwatch sw = Stopwatch.StartNew();
+            List<int> singleThreadPrimes = FindPrimesRange(countFromTotal, countToTotal);
+            sw.Stop();
+            Console.WriteLine($"1. Pojedynczy watek  | Znaleziono: {singleThreadPrimes.Count} | Czas: {sw.ElapsedMilliseconds} ms");
+
+            sw.Restart();
+            int rangeSize = (countToTotal - countFromTotal) / cores;
+            Task<List<int>>[] tasks = new Task<List<int>>[cores];
+            for (int i = 0; i < cores; i++)
+            {
+                int s = countFromTotal + i * rangeSize;
+                int e = (i == cores - 1) ? countToTotal : s + rangeSize;
+                tasks[i] = Task.Factory.StartNew(() => FindPrimesRange(s, e));
+            }
+
+            Task<List<int>> finalTask = Task.Factory.ContinueWhenAll(tasks, completedTasks =>
+            {
+                List<int> combined = new List<int>();
+                foreach (var t in completedTasks)
+                {
+                    combined.AddRange(t.Result);
+                }
+                return combined;
+            });
+
+            List<int> multiThreadPrimes = finalTask.Result;
+            sw.Stop();
+            Console.WriteLine($"2. ContinueWhenAll   | Znaleziono: {multiThreadPrimes.Count} | Czas: {sw.ElapsedMilliseconds} ms");
+        }
+    }
+}
+
+--------------------------------------------------------------------------------
+6. ФАЙЛ: Solutions/PrimesTask/Punkt6.cs (Завдання 6: Клас PrimesGenerator з async/await)
+--------------------------------------------------------------------------------
+// Призначення: сучасний асинхронний патерн обчислення простих чисел
+// на основі await Task.WhenAll(tasks) та LINQ SelectMany.
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
+using System.Threading.Tasks;
+
+namespace PrimesTask
+{
+    public static class PrimesGenerator
+    {
+        public static bool IsPrime(int liczba)
+        {
+            if (liczba <= 1) return false;
+            if (liczba <= 3) return true;
+            if (liczba % 2 == 0 || liczba % 3 == 0) return false;
+            for (int i = 5; i * i <= liczba; i += 6)
+            {
+                if (liczba % i == 0 || liczba % (i + 2) == 0) return false;
+            }
+            return true;
+        }
+
+        static List<int> FindPrimesRange(int start, int end)
+        {
+            List<int> primes = new List<int>();
+            for (int i = start; i < end; i++)
+            {
+                if (IsPrime(i)) primes.Add(i);
+            }
+            return primes;
+        }
+
+        public static async Task<List<int>> FindPrimesAsync(int start, int end)
+        {
+            int cores = Environment.ProcessorCount;
+            int rangeSize = (end - start) / cores;
+            Task<List<int>>[] tasks = new Task<List<int>>[cores];
+
+            for (int i = 0; i < cores; i++)
+            {
+                int s = start + i * rangeSize;
+                int e = (i == cores - 1) ? end : s + rangeSize;
+                tasks[i] = Task.Run(() => FindPrimesRange(s, e));
+            }
+
+            List<int>[] results = await Task.WhenAll(tasks);
+            return results.SelectMany(primes => primes).ToList();
+        }
+    }
+
+    class Punkt6
+    {
+        static void Main(string[] args)
+        {
+            const int start = 0;
+            const int end = 500000;
+            Console.WriteLine($"Zadanie 6: PrimesGenerator (async/await z Task.WhenAll) w zakresie {start}..{end}\n");
+
+            Stopwatch sw = Stopwatch.StartNew();
+            List<int> primes = PrimesGenerator.FindPrimesAsync(start, end).GetAwaiter().GetResult();
+            sw.Stop();
+
+            Console.WriteLine($"PrimesGenerator.FindPrimesAsync | Znaleziono: {primes.Count} liczb | Czas: {sw.ElapsedMilliseconds} ms");
+        }
+    }
+}
+
+================================================================================
+РОЗДІЛ 2. ШПАРГАЛКА ТА ВІДПОВІДІ ДЛЯ УСНОГО ЗАХИСТУ (ЛАБОРАТОРНА 8)
+================================================================================
+
+1. Що робить прапорець TaskContinuationOptions.ExecuteSynchronously?
+ВІДПОВІДЬ:
+Він наказує середовищу CLR виконати завдання континуації на ТОМУ САМОМУ потоці,
+який щойно завершив попереднє завдання (in-line execution). Це усуває необхідність
+ставити задачу в чергу ThreadPool, шукати вільний потік та перемикати контекст.
+
+2. Чому конвеєр обчислення Фібоначчі на TPL повільніший за простий цикл?
+ВІДПОВІДЬ:
+Звичайний цикл працює у процесорних регістрах з нульовим накладним часом.
+У TPL для кожної ітерації виділяється новий об'єкт Task у купі (Heap), створюються
+структури стану континуації та викликається диспетчер. Накладні витрати на виділення
+пам'яті багаторазово перевищують час самого додавання.
+
+3. Чому використовується BigInteger?
+ВІДПОВІДЬ:
+5000-те або 20000-те число Фібоначчі має тисячі розрядів. Стандартні типи C# (long, ulong)
+переповнюються вже після 93-го виразу. BigInteger реалізує довгу арифметику довільної довжини.
+
+4. У чому різниця між Task.Factory.ContinueWhenAll та Task.WhenAll?
+ВІДПОВІДЬ:
+ContinueWhenAll — класичний метод TPL (.NET 4.0), що повертає нову задачу-континуацію
+із передачею масиву completedTasks. Task.WhenAll (.NET 4.5+) повертає задачу, оптимізовану
+під синтаксис async/await, і без блокування повертає масив результатів T[].

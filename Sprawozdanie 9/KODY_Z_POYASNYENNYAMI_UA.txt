@@ -1,0 +1,567 @@
+================================================================================
+ПОЛІТЕХНІКА СВЕНТОКШИСЬКА (POLITECHNIKA ŚWIĘTOKRZYSKA)
+ФАКУЛЬТЕТ ЕЛЕКТРОТЕХНІКИ, АВТОМАТИКИ ТА ІНФОРМАТИКИ
+КАФЕДРА ІНФОРМАТИЧНИХ СИСТЕМ
+ПРЕДМЕТ: ПАРАЛЕЛЬНЕ ТА БАГАТОПОТОКОВЕ ПРОГРАМУВАННЯ (PROGRAMOWANIE WSPÓŁBIEŻNE)
+
+СПРАВОЗДАННЯ № 9: ANULOWANIE, RAPORTOWANIE POSTĘPU W TPL ORAZ PRZETWARZANIE RÓWNOLEGŁE PLINQ
+АВТОРИ: Ihor Namachynskyi / Artem Hizhovskyi | ГРУПА: 3ID11B | ДАТА: 20.11.2026
+================================================================================
+
+РОЗДІЛ 1. ВИХІДНІ КОДИ ВСІХ 8 ЗАВДАНЬ З ДЕТАЛЬНИМИ ПОЯСНЕННЯМИ
+
+--------------------------------------------------------------------------------
+1. ФАЙЛ: Solutions/TaskAdvanced/Punkt1.cs (Завдання 1: calculateSomethingAsync)
+--------------------------------------------------------------------------------
+// Призначення: базова асинхронна функція обчислень із затримкою SpinWait
+// та генерацією масиву випадкових чисел через Random.Shared.
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace TaskAdvanced
+{
+    class Punkt1
+    {
+        static Task<int[]> calculateSomethingAsync(int size)
+        {
+            return Task.Factory.StartNew((s) =>
+            {
+                if (s is null) throw new ArgumentNullException(nameof(s));
+                int[] result = new int[(int)s];
+                for (int i = 0; i < (int)s; i++)
+                {
+                    Thread.SpinWait(10000000);
+                    result[i] = Random.Shared.Next(10);
+                    Console.WriteLine($"I calculated element {i} as [{result[i]}]");
+                }
+                return result;
+            }, size);
+        }
+
+        static void Main(string[] args)
+        {
+            Console.WriteLine("Zadanie 1: Podstawowa metoda calculateSomethingAsync\n");
+
+            Task<int[]> task = calculateSomethingAsync(10);
+            task.Wait();
+
+            Console.WriteLine($"\nObliczenia zakonczone. Liczba wygenerowanych elementow: {task.Result.Length}");
+        }
+    }
+}
+
+--------------------------------------------------------------------------------
+2. ФАЙЛ: Solutions/TaskAdvanced/Punkt2.cs (Завдання 2: Рапортування postepu через IProgress)
+--------------------------------------------------------------------------------
+// Призначення: заміна виклику Console.WriteLine на інтерфейс IProgress<(int, int)>
+// із обробкою події ProgressChanged.
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace TaskAdvanced
+{
+    class Punkt2
+    {
+        static Task<int[]> calculateSomethingAsync(int size, IProgress<(int, int)> progress)
+        {
+            return Task.Factory.StartNew((s) =>
+            {
+                if (s is null) throw new ArgumentNullException(nameof(s));
+                int[] result = new int[(int)s];
+                for (int i = 0; i < (int)s; i++)
+                {
+                    Thread.SpinWait(10000000);
+                    result[i] = Random.Shared.Next(10);
+                    progress?.Report((i, result[i]));
+                }
+                return result;
+            }, size);
+        }
+
+        static void Main(string[] args)
+        {
+            Console.WriteLine("Zadanie 2: Raportowanie postepu z uzyciem IProgress<(int,int)>\n");
+
+            var progress = new Progress<(int, int)>();
+            progress.ProgressChanged += (sender, data) =>
+            {
+                Console.WriteLine($"[ProgressChanged] Iteracja: {data.Item1,2} | Wylosowana wartosc: {data.Item2}");
+            };
+
+            Task<int[]> task = calculateSomethingAsync(10, progress);
+            task.Wait();
+
+            Console.WriteLine($"\nZadanie zakonczone pomyslnie. Wygenerowano {task.Result.Length} liczb.");
+        }
+    }
+}
+
+--------------------------------------------------------------------------------
+3. ФАЙЛ: Solutions/TaskAdvanced/Punkt3.cs (Завдання 3: Скасування через CancellationToken)
+--------------------------------------------------------------------------------
+// Призначення: перевірка запиту на скасування ct.IsCancellationRequested,
+// автоматичне спрацьовування cts.CancelAfter(150) та обробка ae.Flatten().
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace TaskAdvanced
+{
+    class Punkt3
+    {
+        static Task<int[]> calculateSomethingAsync(int size, IProgress<(int, int)> progress, CancellationToken ct)
+        {
+            return Task.Factory.StartNew((s) =>
+            {
+                if (s is null) throw new ArgumentNullException(nameof(s));
+                int[] result = new int[(int)s];
+                for (int i = 0; i < (int)s; i++)
+                {
+                    if (ct.IsCancellationRequested)
+                    {
+                        throw new OperationCanceledException("Nastapilo zadanie anulowania", ct);
+                    }
+
+                    Thread.SpinWait(20000000);
+                    result[i] = Random.Shared.Next(10);
+                    progress?.Report((i, result[i]));
+                }
+                return result;
+            }, size, ct);
+        }
+
+        static void Main(string[] args)
+        {
+            Console.WriteLine("Zadanie 3: Kooperatywne anulowanie zadania za pomoca CancellationToken\n");
+
+            var progress = new Progress<(int, int)>();
+            progress.ProgressChanged += (sender, data) =>
+            {
+                Console.WriteLine($"[Krok {data.Item1}] Wygenerowano: {data.Item2}");
+            };
+
+            using (var cts = new CancellationTokenSource())
+            {
+                cts.CancelAfter(150);
+
+                Task<int[]> task = calculateSomethingAsync(50, progress, cts.Token);
+
+                try
+                {
+                    task.Wait();
+                    Console.WriteLine("Zadanie zakonczylo sie przed anulowaniem.");
+                }
+                catch (AggregateException ae)
+                {
+                    ae.Flatten().Handle(ex =>
+                    {
+                        Console.WriteLine($"[Przechwycono wyjatek] {ex.GetType().Name}: {ex.Message}");
+                        return true;
+                    });
+                }
+            }
+
+            Console.WriteLine("\nZadanie 3 zakonczone.");
+        }
+    }
+}
+
+--------------------------------------------------------------------------------
+4. ФАЙЛ: Solutions/TaskAdvanced/Punkt4.cs (Завдання 4: Опціональні гілки ContinueWith)
+--------------------------------------------------------------------------------
+// Призначення: побудова взаємовиключних континуацій NotOnRanToCompletion
+// (для помилок/скасування) та OnlyOnRanToCompletion (для успіху) з Task.WaitAll.
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace TaskAdvanced
+{
+    class Punkt4
+    {
+        static Task<int[]> calculateSomethingAsync(int size, CancellationToken ct)
+        {
+            return Task.Factory.StartNew((s) =>
+            {
+                if (s is null) throw new ArgumentNullException(nameof(s));
+                int[] result = new int[(int)s];
+                for (int i = 0; i < (int)s; i++)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    Thread.SpinWait(20000000);
+                    result[i] = Random.Shared.Next(10);
+                }
+                return result;
+            }, size, ct);
+        }
+
+        static void Main(string[] args)
+        {
+            Console.WriteLine("Zadanie 4: Alternatywne galazie ContinueWith (OnFaulted vs OnSuccess)\n");
+
+            using (var cts = new CancellationTokenSource())
+            {
+                cts.CancelAfter(150);
+
+                Task<int[]> task = calculateSomethingAsync(50, cts.Token);
+
+                Task onFaultTask = task.ContinueWith(t =>
+                {
+                    Console.WriteLine($"[onFaultTask] Blad lub anulowanie: {t.Exception?.InnerException?.Message ?? "Operacja anulowana."}");
+                }, TaskContinuationOptions.NotOnRanToCompletion);
+
+                Task onSuccessTask = task.ContinueWith(t =>
+                {
+                    Console.WriteLine($"[onSuccessTask] Sukces! Wygenerowano {t.Result.Length} elementow.");
+                }, TaskContinuationOptions.OnlyOnRanToCompletion);
+
+                try
+                {
+                    Task.WaitAll(onFaultTask, onSuccessTask);
+                }
+                catch (AggregateException)
+                {
+                    Console.WriteLine("[TPL] Pominieta galaz zostala anulowana przez harmonogram.");
+                }
+
+                try
+                {
+                    task.Wait();
+                }
+                catch (AggregateException ae)
+                {
+                    ae.Flatten().Handle(e =>
+                    {
+                        Console.WriteLine($"[Przechwycono w Main] {e.GetType().Name}: {e.Message}");
+                        return true;
+                    });
+                }
+            }
+
+            Console.WriteLine("\nZadanie 4 zakonczone.");
+        }
+    }
+}
+
+--------------------------------------------------------------------------------
+5. ФАЙЛ: Solutions/BenchmarkSum/Punkt5.cs (Завдання 5: Послідовне сумування 10 млн)
+--------------------------------------------------------------------------------
+// Призначення: генерація масиву 10 млн псевдовипадкових елементів
+// та послідовне сумування за допомогою циклу foreach.
+using System;
+using System.Diagnostics;
+
+namespace BenchmarkSum
+{
+    class Punkt5
+    {
+        static int[] GenerateRandomArray(int size)
+        {
+            Random random = new Random();
+            int[] array = new int[size];
+            for (int i = 0; i < size; i++)
+            {
+                array[i] = random.Next(10);
+            }
+            return array;
+        }
+
+        static void Main(string[] args)
+        {
+            const int size = 10000000;
+            Console.WriteLine($"Zadanie 5: Sumowanie jednowatkowe tablicy {size} liczb\n");
+
+            Stopwatch sw = Stopwatch.StartNew();
+            int[] numbers = GenerateRandomArray(size);
+            sw.Stop();
+            Console.WriteLine($"Generowanie tablicy: {sw.ElapsedMilliseconds} ms");
+
+            sw.Restart();
+            long sum = 0;
+            foreach (int number in numbers)
+            {
+                sum += number;
+            }
+            sw.Stop();
+
+            Console.WriteLine($"Sekwencyjny foreach | Suma: {sum} | Czas: {sw.ElapsedMilliseconds} ms");
+        }
+    }
+}
+
+--------------------------------------------------------------------------------
+6. ФАЙЛ: Solutions/BenchmarkSum/Punkt6.cs (Завдання 6: Експерименти паралельного сумування)
+--------------------------------------------------------------------------------
+// Призначення: порівняння Parallel.ForEach без lock (випередки), з lock (контенція),
+// однопотокового LINQ Sum() та двох варіантів PLINQ Sum().
+using System;
+using System.Diagnostics;
+using System.Linq;
+using System.Threading.Tasks;
+
+namespace BenchmarkSum
+{
+    class Punkt6
+    {
+        static int[] GenerateRandomArray(int size)
+        {
+            Random random = new Random(42);
+            int[] array = new int[size];
+            for (int i = 0; i < size; i++)
+            {
+                array[i] = random.Next(10);
+            }
+            return array;
+        }
+
+        static void Main(string[] args)
+        {
+            const int size = 10000000;
+            Console.WriteLine($"Zadanie 6: Eksperymenty z sumowaniem rownoleglym ({size} liczb)\n");
+
+            int[] numbers = GenerateRandomArray(size);
+            Stopwatch sw = new Stopwatch();
+
+            // 1. Parallel.ForEach без lock (аномалія випередок)
+            long sumNoLock = 0;
+            sw.Restart();
+            Parallel.ForEach(numbers, number => sumNoLock += number);
+            sw.Stop();
+            Console.WriteLine($"1. Parallel.ForEach (bez lock): Suma = {sumNoLock,-10} | Czas = {sw.ElapsedMilliseconds,5} ms (BLAD WYSCIGU)");
+
+            // 2. Parallel.ForEach з lock
+            object locker = new object();
+            long sumWithLock = 0;
+            sw.Restart();
+            Parallel.ForEach(numbers, number =>
+            {
+                lock (locker)
+                {
+                    sumWithLock += number;
+                }
+            });
+            sw.Stop();
+            Console.WriteLine($"2. Parallel.ForEach (z lock):   Suma = {sumWithLock,-10} | Czas = {sw.ElapsedMilliseconds,5} ms (LOCK CONTENTION)");
+
+            // 3. LINQ jednowatkowe Sum()
+            sw.Restart();
+            long linqSum = numbers.Select(x => (long)x).Sum();
+            sw.Stop();
+            Console.WriteLine($"3. LINQ Sum() jednowatkowy:     Suma = {linqSum,-10} | Czas = {sw.ElapsedMilliseconds,5} ms");
+
+            // 4. PLINQ ForAll z lock
+            long plinqForAllSum = 0;
+            sw.Restart();
+            numbers.AsParallel().ForAll(number =>
+            {
+                lock (locker)
+                {
+                    plinqForAllSum += number;
+                }
+            });
+            sw.Stop();
+            Console.WriteLine($"4. PLINQ ForAll (z lock):       Suma = {plinqForAllSum,-10} | Czas = {sw.ElapsedMilliseconds,5} ms");
+
+            // 5a. PLINQ Sum()
+            sw.Restart();
+            long plinqSum1 = numbers.AsParallel().Select(x => (long)x).Sum();
+            sw.Stop();
+            Console.WriteLine($"5a. PLINQ Sum(selektor):        Suma = {plinqSum1,-10} | Czas = {sw.ElapsedMilliseconds,5} ms");
+
+            // 5b. PLINQ Sum() bezparametrowy
+            sw.Restart();
+            long plinqSum2 = numbers.AsParallel().Select(x => (long)x).Sum();
+            sw.Stop();
+            Console.WriteLine($"5b. PLINQ Sum() bezparametrowy: Suma = {plinqSum2,-10} | Czas = {sw.ElapsedMilliseconds,5} ms");
+        }
+    }
+}
+
+--------------------------------------------------------------------------------
+7. ФАЙЛ: Solutions/BenchmarkSum/Punkt7.cs (Завдання 7: Сумування на звичайних задачах Task)
+--------------------------------------------------------------------------------
+// Призначення: розбиття масиву на Environment.ProcessorCount партицій,
+// очікування Task.WhenAll(tasks) та редукція локальних сум.
+using System;
+using System.Diagnostics;
+using System.Linq;
+using System.Threading.Tasks;
+
+namespace BenchmarkSum
+{
+    class Punkt7
+    {
+        static int[] GenerateRandomArray(int size)
+        {
+            Random random = new Random(42);
+            int[] array = new int[size];
+            for (int i = 0; i < size; i++)
+            {
+                array[i] = random.Next(10);
+            }
+            return array;
+        }
+
+        static void Main(string[] args)
+        {
+            const int size = 10000000;
+            int cores = Environment.ProcessorCount;
+            Console.WriteLine($"Zadanie 7: Sumowanie partycjami Task na {cores} rdzeniach ({size} liczb)\n");
+
+            int[] numbers = GenerateRandomArray(size);
+            int chunkSize = size / cores;
+            Task<double>[] tasks = new Task<double>[cores];
+
+            Stopwatch sw = Stopwatch.StartNew();
+            for (int i = 0; i < cores; i++)
+            {
+                int start = i * chunkSize;
+                int end = (i == cores - 1) ? size : start + chunkSize;
+                tasks[i] = Task.Run(() =>
+                {
+                    double localSum = 0;
+                    for (int j = start; j < end; j++)
+                    {
+                        localSum += numbers[j];
+                    }
+                    return localSum;
+                });
+            }
+
+            double[] partialResults = Task.WhenAll(tasks).Result;
+            double sum = partialResults.Sum();
+            sw.Stop();
+
+            Console.WriteLine($"Partycje Task.Run | Suma = {sum:F0} | Czas = {sw.ElapsedMilliseconds} ms");
+        }
+    }
+}
+
+--------------------------------------------------------------------------------
+8. ФАЙЛ: Solutions/BenchmarkSum/Punkt8.cs (Завдання 8: Сумування з функцією calculatedValue)
+--------------------------------------------------------------------------------
+// Призначення: бенчмарк методів сумування на складному обчислювальному навантаженні
+// (математична функція calculatedValue).
+using System;
+using System.Diagnostics;
+using System.Linq;
+using System.Threading.Tasks;
+
+namespace BenchmarkSum
+{
+    class Punkt8
+    {
+        static double calculatedValue(double value)
+        {
+            return (Math.Sin(Math.Sin(value * value) * Math.Cos(value * value) / Math.PI));
+        }
+
+        static int[] GenerateRandomArray(int size)
+        {
+            Random random = new Random(42);
+            int[] array = new int[size];
+            for (int i = 0; i < size; i++)
+            {
+                array[i] = random.Next(10);
+            }
+            return array;
+        }
+
+        static void Main(string[] args)
+        {
+            const int size = 5000000;
+            int cores = Environment.ProcessorCount;
+            Console.WriteLine($"Zadanie 8: Benchmark z funkcja nieliniowa calculatedValue ({size} liczb, {cores} rdzeni)\n");
+
+            int[] numbers = GenerateRandomArray(size);
+            Stopwatch sw = new Stopwatch();
+
+            // 1. Sekwencyjny foreach
+            sw.Restart();
+            double seqSum = 0;
+            foreach (int number in numbers)
+            {
+                seqSum += calculatedValue(number);
+            }
+            sw.Stop();
+            Console.WriteLine($"1. Sekwencyjny foreach:         Suma = {seqSum:F2} | Czas = {sw.ElapsedMilliseconds,5} ms");
+
+            // 2. Parallel.ForEach z lock
+            object locker = new object();
+            double parallelLockSum = 0;
+            sw.Restart();
+            Parallel.ForEach(numbers, number =>
+            {
+                double val = calculatedValue(number);
+                lock (locker)
+                {
+                    parallelLockSum += val;
+                }
+            });
+            sw.Stop();
+            Console.WriteLine($"2. Parallel.ForEach (z lock):   Suma = {parallelLockSum:F2} | Czas = {sw.ElapsedMilliseconds,5} ms (SPADEK)");
+
+            // 3. PLINQ AsParallel().Sum()
+            sw.Restart();
+            double plinqSum = numbers.AsParallel().Sum(n => calculatedValue(n));
+            sw.Stop();
+            Console.WriteLine($"3. PLINQ AsParallel().Sum():    Suma = {plinqSum:F2} | Czas = {sw.ElapsedMilliseconds,5} ms (PRZYSPIESZENIE)");
+
+            // 4. Partycje Task.Run
+            int chunkSize = size / cores;
+            Task<double>[] tasks = new Task<double>[cores];
+            sw.Restart();
+            for (int i = 0; i < cores; i++)
+            {
+                int start = i * chunkSize;
+                int end = (i == cores - 1) ? size : start + chunkSize;
+                tasks[i] = Task.Run(() =>
+                {
+                    double localSum = 0;
+                    for (int j = start; j < end; j++)
+                    {
+                        localSum += calculatedValue(numbers[j]);
+                    }
+                    return localSum;
+                });
+            }
+            double[] partialResults = Task.WhenAll(tasks).Result;
+            double tplSum = partialResults.Sum();
+            sw.Stop();
+            Console.WriteLine($"4. Partycje Task.Run:           Suma = {tplSum:F2} | Czas = {sw.ElapsedMilliseconds,5} ms (NAJSZYBSZE)");
+        }
+    }
+}
+
+================================================================================
+РОЗДІЛ 2. ШПАРГАЛКА ТА ВІДПОВІДІ ДЛЯ УСНОГО ЗАХИСТУ (ЛАБОРАТОРНА 9)
+================================================================================
+
+1. Як влаштований механізм кооперативного скасування (Cooperative Cancellation)?
+ВІДПОВІДЬ:
+У .NET потік не примусово вбивається зовні, а періодично сам опитує переданий
+CancellationToken. Метод token.ThrowIfCancellationRequested() викидає
+OperationCanceledException, якщо CancellationTokenSource ініціював скасування
+(наприклад, після закінчення тайм-ауту cts.CancelAfter(5000)).
+
+2. Що відбувається з гілками OnlyOnRanToCompletion та OnlyOnFaulted при скасуванні?
+ВІДПОВІДЬ:
+Якщо попереднє завдання було скасоване, планувальник автоматично переводить гілку
+OnlyOnRanToCompletion у статус Canceled без виклику її тіла, а активує виключно
+гілку NotOnRanToCompletion / OnlyOnFaulted. При очікуванні через Task.WaitAll
+необхідно перехоплювати AggregateException.
+
+3. Чому Parallel.ForEach з lock працює у 5–10 разів повільніше за звичайний for?
+ВІДПОВІДЬ:
+Через надвисоку конкуренцію за блокування (Lock Contention) та інвалідацію процесорних
+кешів (Cache Line Bouncing). Коли всі ядра процесора мільйони разів на секунду борються
+за єдиний об'єкт locker, шина когерентності пам'яті (протокол MESI) перевантажується,
+а потоки 90% часу простоюють у спін-блокуванні або перемиканні контексту.
+
+4. Чому PLINQ AsParallel().Sum() та дедиковані partycje TPL такі швидкі?
+ВІДПОВІДЬ:
+Вони реалізують безблокадну редукцію: кожне ядро накопичує проміжну суму у власному
+регістрі або локальній змінній, і лише в самому кінці виконується одна фінальна
+операція додавання результатів усіх ядер (zero lock overhead).
