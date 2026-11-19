@@ -53,7 +53,7 @@ namespace PrimesTask
         static void Main(string[] args)
         {
             const int start = 0;
-            const int end = 500000;
+            const int end = 10000000;
             Console.WriteLine($"Zadanie 6: PrimesGenerator (async/await z Task.WhenAll) w zakresie {start}..{end}\n");
 
             Stopwatch sw = Stopwatch.StartNew();

@@ -53,7 +53,7 @@ Każdy moduł laboratoryjny zawiera:
 - **Punkt 2 (LabTask1):** Wpływ `ExecuteSynchronously` na zadania obciążające procesor z funkcją `DoPointlessMess()`.
 - **Punkt 3 (LabTask1):** Przekazywanie wartości w łańcuchu zadań potoku (`Task<double>`, parametr `aa`, właściwość `ant.Result`).
 - **Punkt 4 (FibonacciTask):** Potokowe obliczanie wyrazów ciągu Fibonacciego na typie arytmetyki o dowolnej precyzji `BigInteger` i `Tuple<BigInteger, BigInteger>` (20 000 ogniw potoku vs pętla sekwencyjna).
-- **Punkt 5 (PrimesTask):** Wielowątkowe sito liczb pierwszych z dekompozycją zakresu na `Environment.ProcessorCount` i scalaniem cząstkowych wyników przez `Task.Factory.ContinueWhenAll()`.
+- **Punkt 5 (PrimesTask):** Wielowątkowe sito liczb pierwszych w zakresie 0..10 000 000 z dekompozycją zakresu na `Environment.ProcessorCount` i scalaniem cząstkowych wyników przez `Task.Factory.ContinueWhenAll()` (ponad 4x przyspieszenia wielowątkowego).
 - **Punkt 6 (PrimesTask):** Nowoczesny asynchroniczny generator liczb pierwszych — klasa statyczna `PrimesGenerator` z metodą TAP `FindPrimesAsync`, `await Task.WhenAll()` i zapytaniem LINQ `SelectMany`.
 
 ### [Sprawozdanie 9](./Sprawozdanie%209/) — Kooperatywne Anulowanie, Raportowanie Postępu w TPL oraz Przetwarzanie Równoległe PLINQ

@@ -56,7 +56,7 @@ W czwartym punkcie utworzono projekt `FibonacciTask` i zaimplementowano funkcję
 *Rysunek 4. Porównanie potokowego obliczania ciągu Fibonacciego z rozwiązaniem sekwencyjnym.*
 
 ### 5. Wielowątkowe sito liczb pierwszych z ContinueWhenAll
-W piątym zadaniu utworzono projekt `PrimesTask` z funkcją weryfikacji pierwszości `IsPrime(int liczba)`. Zmierzono czas wyszukiwania liczb pierwszych w zakresie 0..500 000 na pojedynczym wątku, a następnie podzielono zakres na liczbę zadań równą `Environment.ProcessorCount`. Zastosowano metodę `Task.Factory.ContinueWhenAll()` do scalenia cząstkowych list liczb w wynikową kolekcję. Osiągnięto blisko liniowe przyspieszenie wielowątkowe.
+W piątym zadaniu utworzono projekt `PrimesTask` z funkcją weryfikacji pierwszości `IsPrime(int liczba)`. Zmierzono czas wyszukiwania liczb pierwszych w zakresie 0..10 000 000 na pojedynczym wątku, a następnie podzielono zakres na liczbę zadań równą `Environment.ProcessorCount`. Zastosowano metodę `Task.Factory.ContinueWhenAll()` do scalenia cząstkowych list liczb w wynikową kolekcję. Osiągnięto wyraźne ponad 4-krotne przyspieszenie wielowątkowe.
 
 *Rysunek 5. Wyniki wyszukiwania liczb pierwszych metodą sekwencyjną oraz równoległą z ContinueWhenAll.*
 
@@ -333,7 +333,7 @@ namespace PrimesTask
         static void Main(string[] args)
         {
             const int countFromTotal = 0;
-            const int countToTotal = 500000;
+            const int countToTotal = 10000000;
             int cores = Environment.ProcessorCount;
 
             Console.WriteLine($"Zadanie 5: Liczby pierwsze w zakresie {countFromTotal}..{countToTotal} (Rdzenie: {cores})\n");
@@ -428,7 +428,7 @@ namespace PrimesTask
         static void Main(string[] args)
         {
             const int start = 0;
-            const int end = 500000;
+            const int end = 10000000;
             Console.WriteLine($"Zadanie 6: PrimesGenerator (async/await z Task.WhenAll) w zakresie {start}..{end}\n");
 
             Stopwatch sw = Stopwatch.StartNew();

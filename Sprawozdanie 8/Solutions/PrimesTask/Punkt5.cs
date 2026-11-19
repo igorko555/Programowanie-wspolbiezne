@@ -32,7 +32,7 @@ namespace PrimesTask
         static void Main(string[] args)
         {
             const int countFromTotal = 0;
-            const int countToTotal = 500000;
+            const int countToTotal = 10000000;
             int cores = Environment.ProcessorCount;
 
             Console.WriteLine($"Zadanie 5: Liczby pierwsze w zakresie {countFromTotal}..{countToTotal} (Rdzenie: {cores})\n");
