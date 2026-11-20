@@ -11,7 +11,7 @@ namespace LabTask1
             const int chainLength = 100000;
             const int runs = 5;
 
-            Console.WriteLine($"Zadanie 1: Lancuch {chainLength} zadan TPL (srednia z {runs} prob)\n");
+            Console.WriteLine($"Lancuch {chainLength} zadan TPL (srednia z {runs} prob)\n");
 
             long totalInitSync = 0, totalExecSync = 0;
             for (int r = 0; r < runs; r++)
